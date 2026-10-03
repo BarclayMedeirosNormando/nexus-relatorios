@@ -1,0 +1,8 @@
+*.xlsx
+*.csv
+response*.json
+reports_data.json
+temp_xlsx/
+build/
+.dart_tool/
+.env
