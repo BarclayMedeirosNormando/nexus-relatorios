@@ -1750,6 +1750,17 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
     );
   }
 
+  /// Links do Drive não podem ser baixados pelo navegador (CORS), mas podem ser
+  /// exibidos por uma tag <img>; a miniatura do Drive é leve e funciona nela.
+  String _drivePreviewUrl(String url) {
+    if (!url.contains('drive.google.com')) return url;
+    final m = RegExp(r'[?&]id=([-\w]+)').firstMatch(url) ??
+        RegExp(r'/d/([-\w]+)').firstMatch(url);
+    final id = m?.group(1);
+    if (id == null) return url;
+    return 'https://drive.google.com/thumbnail?id=$id&sz=w800';
+  }
+
   Widget _buildPhotoPreview(PhotoItem photo, int idx, ThemeData theme) {
     final path = photo.path.trim();
     final bool isNetwork = path.startsWith('http://') || path.startsWith('https://');
@@ -1773,7 +1784,8 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
       }
     } else if (isNetwork || kIsWeb) {
       imageWidget = Image.network(
-        path,
+        _drivePreviewUrl(path),
+        webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
         width: 100,
         height: 100,
         fit: BoxFit.cover,
@@ -1863,7 +1875,8 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
               color: Colors.white,
             ),
             child: Image.network(
-              url,
+              _drivePreviewUrl(url),
+              webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
               height: 100,
               fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) => Container(

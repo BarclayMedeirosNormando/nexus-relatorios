@@ -1733,6 +1733,35 @@ class GoogleSheetsService {
     );
   }
 
+  static final Map<String, Uint8List> _driveFileCache = {};
+
+  /// Baixa um arquivo da pasta de fotos pelo Apps Script (base64). Necessário
+  /// no navegador, onde o Drive bloqueia o download direto (CORS).
+  Future<Uint8List?> fetchDriveFileBytes(String urlOrId) async {
+    final key = urlOrId.trim();
+    if (key.isEmpty) return null;
+    final cached = _driveFileCache[key];
+    if (cached != null) return cached;
+    try {
+      final response = await _postAppsScript(
+        Uri.parse(_scriptUrl),
+        payload: {'acao': 'buscar_arquivo', 'id': key},
+        timeout: const Duration(seconds: 40),
+      );
+      if (response.statusCode != 200) return null;
+      final decoded = _parseAndValidateResponse(response);
+      if (!_isSuccess(decoded)) return null;
+      final b64 = decoded['base64']?.toString() ?? '';
+      if (b64.isEmpty) return null;
+      final bytes = base64Decode(b64);
+      _driveFileCache[key] = bytes;
+      return bytes;
+    } catch (e) {
+      debugPrint('Falha ao baixar arquivo do Drive: $e');
+      return null;
+    }
+  }
+
   Future<void> sendTechnician(TechnicianModel tech, String acao) async {
     debugPrint('Usando aba de técnicos: ${Constants.techniciansSheetName}');
     final Map<String, dynamic> data = {

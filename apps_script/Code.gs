@@ -1,5 +1,5 @@
 // ============================================================
-// NEXUS RELATORIOS - Backend v3.0.0 (PWA / projeto independente)
+// NEXUS RELATORIOS - Backend v3.1.0 (PWA / projeto independente)
 // ------------------------------------------------------------
 // Origem: APPS_SCRIPT_COMPLETO.gs (v2.1.0) do repositorio AppSecretaria.
 // Mantidos SEM alteracao de comportamento: abas, cabecalhos, aliases,
@@ -23,7 +23,7 @@
 // continua sendo JSON e e lido de e.postData.contents.
 // ============================================================
 
-var APP_VERSION_BACKEND = '3.0.0';
+var APP_VERSION_BACKEND = '3.1.0';
 var DEFAULT_SPREADSHEET_ID = '1DjHVSCbakaZwXgcY1kb0x_JXFqrM5HFFaXC8SVgbF0w';
 
 function getProp_(key, fallback) {
@@ -342,6 +342,7 @@ function doPost(e) {
     if (action === 'buscar_tecnicos' || action === 'fetchTechnicians') return fetchTechniciansAction(ss, payload);
     if (action === 'buscar_historico' || action === 'fetchHistory' || action === 'buscarHistorico') return fetchHistoryAction(ss, payload);
     if (action === 'buscar_funcionarios') return buscarFuncionariosAction(ss, payload);
+    if (action === 'buscar_arquivo') return fetchDriveFileAction(payload);
 
     if (action === 'adicionar' || action === 'sendReport' || action === 'updateReport') {
       return saveReportAction(ss, payload, action);
@@ -1537,6 +1538,42 @@ function normalizeMateriaisTiJson(value) {
   if (Array.isArray(value) || typeof value === 'object') return JSON.stringify(value);
   var text = String(value).trim();
   return text ? text : '[]';
+}
+
+// Devolve (em base64) um arquivo da pasta de fotos. O navegador não consegue
+// baixar arquivos do Drive direto (CORS); o PWA usa esta ação para montar o PDF.
+// Só entrega arquivos que estejam DENTRO da pasta de fotos configurada.
+function fetchDriveFileAction(payload) {
+  var raw = String(getValFromObj(payload, ['id', 'fileId', 'url']) || '');
+  var m = raw.match(/[?&]id=([-\w]{20,})/) || raw.match(/\/d\/([-\w]{20,})/) || raw.match(/^([-\w]{20,})$/);
+  var fileId = m ? m[1] : '';
+  if (!fileId) return resposta({status: 'error', success: false, message: 'Arquivo inválido'});
+
+  var file;
+  try {
+    file = DriveApp.getFileById(fileId);
+  } catch (err) {
+    return resposta({status: 'error', success: false, message: 'Arquivo não encontrado'});
+  }
+
+  var folderId = getDriveFolder().getId();
+  var inFolder = false;
+  var parents = file.getParents();
+  while (parents.hasNext()) {
+    if (parents.next().getId() === folderId) { inFolder = true; break; }
+  }
+  if (!inFolder) return resposta({status: 'error', success: false, message: 'Arquivo fora da pasta de fotos'});
+
+  var blob = file.getBlob();
+  var bytes = blob.getBytes();
+  if (bytes.length > 6 * 1024 * 1024) {
+    return resposta({status: 'error', success: false, message: 'Arquivo muito grande'});
+  }
+  return resposta({
+    status: 'success', success: true,
+    nome: file.getName(), mimeType: blob.getContentType(),
+    base64: Utilities.base64Encode(bytes)
+  });
 }
 
 function directDriveUrl(fileId) {

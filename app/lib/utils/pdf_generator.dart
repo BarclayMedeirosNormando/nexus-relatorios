@@ -12,6 +12,7 @@ import 'package:printing/printing.dart';
 
 import '../models/report_model.dart';
 import '../services/employee_service.dart';
+import '../services/google_sheets_service.dart';
 import '../services/technician_service.dart';
 
 class PdfGenerator {
@@ -191,6 +192,14 @@ class PdfGenerator {
           trimmed.startsWith('https://') ||
           trimmed.contains('drive.google.com')) {
         final driveId = _extractDriveFileId(trimmed);
+
+        // No navegador o Drive bloqueia o download direto (CORS): usa o
+        // Apps Script como ponte.
+        if (kIsWeb && driveId != null) {
+          final viaScript =
+              await GoogleSheetsService().fetchDriveFileBytes(trimmed);
+          if (viaScript != null && viaScript.isNotEmpty) return viaScript;
+        }
         final urls = <String>[
           if (driveId != null)
             'https://drive.google.com/uc?export=download&id=$driveId',
