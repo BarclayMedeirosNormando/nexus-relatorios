@@ -47,6 +47,7 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
 
   String? _filterRegional;
   String? _filterCity;
+  bool _submitAttempted = false;
 
   List<String> _selectedSubjects = [];
   List<String> _selectedTechnicians = [];
@@ -209,14 +210,51 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
     }
   }
 
+  List<SchoolModel>? _greSourceSchools;
+  Map<String, String> _inferredGreByCity = {};
+
+  /// Regional "efetiva" da escola: a da própria escola ou, quando a planilha
+  /// está em branco, a única regional das demais escolas do mesmo município.
+  String _effectiveGre(SchoolModel s) {
+    final own = s.gre.trim();
+    if (own.isNotEmpty) return own;
+    if (!identical(_greSourceSchools, _availableSchools)) {
+      _greSourceSchools = _availableSchools;
+      final byCity = <String, Set<String>>{};
+      for (final x in _availableSchools) {
+        final g = x.gre.trim();
+        if (g.isEmpty) continue;
+        byCity.putIfAbsent(_normalize(x.city), () => <String>{}).add(g);
+      }
+      _inferredGreByCity = {
+        for (final e in byCity.entries)
+          if (e.value.length == 1) e.key: e.value.first,
+      };
+    }
+    return _inferredGreByCity[_normalize(s.city)] ?? '';
+  }
+
+  bool _matchesRegional(SchoolModel s, String? regional) {
+    final reg = _normalize(regional);
+    return reg.isEmpty || _normalize(_effectiveGre(s)) == reg;
+  }
+
+  bool _matchesCity(SchoolModel s, String? city) {
+    final c = _normalize(city);
+    return c.isEmpty || _normalize(s.city) == c;
+  }
+
+  // As listas de Regional e Município são filtradas uma pela outra, então os
+  // filtros podem ser usados em qualquer ordem.
   List<String> get _availableRegionals {
     final set = <String>{};
     for (final s in _availableSchools) {
-      final gre = s.gre.trim();
+      if (!_matchesCity(s, _filterCity)) continue;
+      final gre = _effectiveGre(s);
       if (gre.isNotEmpty) set.add(gre);
     }
 
-    if (set.isEmpty) {
+    if (set.isEmpty && _availableSchools.isEmpty) {
       set.addAll(Constants.regionals.where((r) => r.trim().isNotEmpty));
     }
 
@@ -226,9 +264,9 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
   }
 
   List<SchoolModel> get _schoolsBySelectedRegional {
-    final reg = _normalize(_filterRegional);
-    if (reg.isEmpty) return _availableSchools;
-    return _availableSchools.where((s) => _normalize(s.gre) == reg).toList();
+    return _availableSchools
+        .where((s) => _matchesRegional(s, _filterRegional))
+        .toList();
   }
 
   List<String> get _availableCities {
@@ -248,32 +286,29 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
   }
 
   List<SchoolModel> _getFilteredSchools(String query) {
-    var result = List<SchoolModel>.from(_availableSchools);
-    final reg = _normalizeFilterText(_filterRegional ?? '');
-    final city = _normalizeFilterText(_filterCity ?? '');
-    final q = _normalizeFilterText(query);
+    var result = _availableSchools
+        .where((s) =>
+            _matchesRegional(s, _filterRegional) &&
+            _matchesCity(s, _filterCity))
+        .toList();
 
-    if (reg.isNotEmpty) {
-      result = result
-          .where((s) => _normalizeFilterText(s.gre) == reg)
-          .toList();
-    }
-
-    if (city.isNotEmpty) {
-      result = result
-          .where((s) => _normalizeFilterText(s.city) == city)
-          .toList();
-    }
-
-    if (q.isNotEmpty) {
+    // Busca por qualquer parte do nome ou do INEP, com as palavras em
+    // qualquer ordem ("durval ecit" encontra "ECIT DURVAL GUEDES").
+    final tokens = _normalizeFilterText(query)
+        .split(' ')
+        .where((t) => t.isNotEmpty)
+        .toList();
+    if (tokens.isNotEmpty) {
       result = result.where((s) {
-        return _normalizeFilterText(s.name).contains(q) ||
-            _normalizeFilterText(s.inep).contains(q);
+        final haystack =
+            '${_normalizeFilterText(s.name)} ${_normalizeFilterText(s.inep)}';
+        return tokens.every(haystack.contains);
       }).toList();
     }
 
     result.sort((a, b) {
-      final greCompare = _normalize(a.gre).compareTo(_normalize(b.gre));
+      final greCompare =
+          _normalize(_effectiveGre(a)).compareTo(_normalize(_effectiveGre(b)));
       if (greCompare != 0) return greCompare;
 
       final cityCompare = _normalize(a.city).compareTo(_normalize(b.city));
@@ -286,23 +321,25 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
   }
 
   List<String> _regionalsForCity(String? city) {
-    final normalizedCity = _normalizeFilterText(city ?? '');
-    if (normalizedCity.isEmpty) return [];
-
-    final citySchools = _availableSchools
-        .where((s) => _normalizeFilterText(s.city) == normalizedCity)
-        .toList();
-
-    if (citySchools.any((s) => s.gre.trim().isEmpty)) return [];
-
-    final regionals = citySchools
-        .map((s) => s.gre.trim())
+    final regionals = _availableSchools
+        .where((s) => _matchesCity(s, city))
+        .map(_effectiveGre)
         .where((gre) => gre.isNotEmpty)
         .toSet()
         .toList();
 
     regionals.sort((a, b) => _normalize(a).compareTo(_normalize(b)));
     return regionals;
+  }
+
+  /// Mantém a escola escolhida se ainda combina com os filtros; senão limpa.
+  void _reconcileSelectedSchool() {
+    if (_selectedSchool == null) return;
+    final reg = _normalize(_filterRegional);
+    final city = _normalize(_filterCity);
+    final regOk = reg.isEmpty || _normalize(_gre) == reg;
+    final cityOk = city.isEmpty || _normalize(_selectedSchoolCity) == city;
+    if (!regOk || !cityOk) _clearSelectedSchool();
   }
 
   void _handleRegionalChanged(String? regional) {
@@ -314,7 +351,7 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
         _filterCity = null;
       }
 
-      _clearSelectedSchool();
+      _reconcileSelectedSchool();
     });
   }
 
@@ -322,14 +359,14 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
     setState(() {
       _filterCity = city;
 
-      if (_normalizeFilterText(_filterRegional ?? '').isEmpty) {
+      if (_normalize(_filterRegional).isEmpty) {
         final cityRegionals = _regionalsForCity(city);
         if (cityRegionals.length == 1) {
           _filterRegional = cityRegionals.first;
         }
       }
 
-      _clearSelectedSchool();
+      _reconcileSelectedSchool();
     });
   }
 
@@ -644,6 +681,7 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
   }
 
   void _submitData() async {
+    if (!_submitAttempted) setState(() => _submitAttempted = true);
     if (_formKey.currentState!.validate() && _selectedDate != null && _selectedSchool != null) {
       final signatureBytesList = <Uint8List>[];
       for (var controller in _signatureControllers) {
@@ -759,7 +797,7 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
 
   Widget _buildDateSection() {
     final theme = Theme.of(context);
-    final hasError = _selectedDate == null && _formKey.currentState != null && !_formKey.currentState!.validate();
+    final hasError = _submitAttempted && _selectedDate == null;
 
     return SectionCard(
       title: 'Dados da Visita',
@@ -1012,22 +1050,16 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
                   onSelected: (SchoolModel selection) {
                     setState(() {
                       _selectedSchool = selection.name;
-                      _gre = selection.gre;
+                      _gre = _effectiveGre(selection);
                       _selectedSchoolAddress = selection.address;
                       _selectedSchoolCity = selection.city;
                       _selectedSchoolInep = selection.inep;
-                      if (_filterRegional == null || _filterRegional!.isEmpty) {
-                        _filterRegional =
-                            _containsFilterText(_availableRegionals, selection.gre)
-                                ? selection.gre
-                                : null;
-                      }
-                      if (_filterCity == null || _filterCity!.isEmpty) {
-                        _filterCity =
-                            _containsFilterText(_availableCities, selection.city)
-                                ? selection.city
-                                : null;
-                      }
+                      // Escolheu a escola primeiro: Regional e Município
+                      // são preenchidos automaticamente.
+                      final gre = _effectiveGre(selection);
+                      final city = selection.city.trim();
+                      _filterRegional = gre.isEmpty ? _filterRegional : gre;
+                      _filterCity = city.isEmpty ? _filterCity : city;
                       _schoolSearchController.text = selection.name;
                     });
                   },
