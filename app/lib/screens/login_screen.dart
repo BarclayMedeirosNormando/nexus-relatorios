@@ -11,6 +11,9 @@ import '../widgets/custom_text_field.dart';
 import '../services/technician_service.dart';
 import '../services/google_sheets_service.dart';
 import '../services/employee_service.dart';
+import '../services/offline_auth.dart';
+import '../services/apps_script_client.dart';
+import '../models/technician_model.dart';
 import '../widgets/app_ui.dart';
 import 'home_screen.dart';
 
@@ -396,11 +399,10 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _loginViaServer() async {
+    final email = _emailController.text.trim();
+    final senha = _passwordController.text;
     try {
-      final tecnico = await GoogleSheetsService().loginRemote(
-        _emailController.text.trim(),
-        _passwordController.text,
-      );
+      final tecnico = await GoogleSheetsService().loginRemote(email, senha);
       if (tecnico == null) {
         if (mounted) {
           setState(() => _isLoading = false);
@@ -409,10 +411,8 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('logged_user_id', tecnico.id);
-      await prefs.setString('logged_user', tecnico.name);
-      await prefs.setString('logged_user_permission', tecnico.permissions);
+      await OfflineAuth.remember(email, senha, tecnico);
+      await _openSession(tecnico);
 
       // Com a sessão aberta, carrega listas que exigem token.
       try {
@@ -422,19 +422,53 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       EmployeeService().initialize();
 
-      if (mounted) {
-        setState(() => _isLoading = false);
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-        );
-      }
+      _goHome();
     } catch (e) {
       debugPrint('Erro no login pelo servidor: $e');
+      // Sem conexão: aceita quem já entrou online neste aparelho.
+      final offline = await OfflineAuth.verify(email, senha);
+      if (offline.tecnico != null) {
+        await _openSession(offline.tecnico!, keepToken: false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Sem conexão: entrou no modo offline.'),
+            ),
+          );
+        }
+        _goHome();
+        return;
+      }
       if (mounted) {
         setState(() => _isLoading = false);
-        _showLoginError('Não foi possível conectar ao servidor.');
+        _showLoginError(
+          offline.known
+              ? 'E-mail ou senha incorretos.'
+              : 'Sem conexão com o servidor. O primeiro acesso neste '
+                  'aparelho precisa de internet.',
+        );
       }
     }
+  }
+
+  Future<void> _openSession(TechnicianModel tecnico,
+      {bool keepToken = true}) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('logged_user_id', tecnico.id);
+    await prefs.setString('logged_user', tecnico.name);
+    await prefs.setString('logged_user_permission', tecnico.permissions);
+    if (keepToken) {
+      await prefs.setString(
+          'session_token', AppsScriptClient.sessionToken ?? '');
+    }
+  }
+
+  void _goHome() {
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => const HomeScreen()),
+    );
   }
 
   void _showLoginError(String message) {

@@ -31,7 +31,7 @@ jobs:
       # Defina em Settings > Secrets and variables > Actions > Variables:
       #   APPS_SCRIPT_URL = https://script.google.com/macros/s/XXXX/exec
       - run: >
-          flutter build web --release
+          flutter build web --release --no-web-resources-cdn
           --base-href "/${{ github.event.repository.name }}/"
           --dart-define=APPS_SCRIPT_URL=${{ vars.APPS_SCRIPT_URL }}
       - uses: actions/upload-pages-artifact@v3

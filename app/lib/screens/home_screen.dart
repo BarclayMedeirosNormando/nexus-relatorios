@@ -753,6 +753,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await prefs.remove('logged_user');
     await prefs.remove('logged_user_permission');
     await prefs.remove('logged_user_id');
+    await prefs.remove('session_token');
     AppsScriptClient.sessionToken = null;
     
     if (mounted) {

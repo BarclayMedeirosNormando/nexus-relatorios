@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'services/apps_script_client.dart';
 import 'services/school_service.dart';
 import 'services/technician_service.dart';
 import 'services/employee_service.dart';
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,11 +23,37 @@ void main() async {
   final isDark = prefs.getBool('is_dark_mode') ?? false;
   themeNotifier.value = isDark ? ThemeMode.dark : ThemeMode.light;
 
-  runApp(const AppSecretaria());
+  // PWA: mantém o usuário conectado entre as aberturas do app (também offline).
+  final keepSession =
+      kIsWeb && (prefs.getString('logged_user') ?? '').isNotEmpty;
+  final savedToken = prefs.getString('session_token');
+  if (keepSession && savedToken != null && savedToken.isNotEmpty) {
+    AppsScriptClient.sessionToken = savedToken;
+  }
+
+  var authExpiredHandled = false;
+  AppsScriptClient.onAuthExpired = () async {
+    if (authExpiredHandled) return;
+    authExpiredHandled = true;
+    final p = await SharedPreferences.getInstance();
+    await p.remove('logged_user');
+    await p.remove('logged_user_permission');
+    await p.remove('logged_user_id');
+    await p.remove('session_token');
+    AppsScriptClient.sessionToken = null;
+    navigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+    authExpiredHandled = false;
+  };
+
+  runApp(AppSecretaria(startLoggedIn: keepSession));
 }
 
 class AppSecretaria extends StatelessWidget {
-  const AppSecretaria({super.key});
+  final bool startLoggedIn;
+  const AppSecretaria({super.key, this.startLoggedIn = false});
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +62,7 @@ class AppSecretaria extends StatelessWidget {
       builder: (context, ThemeMode currentMode, _) {
         return MaterialApp(
           title: 'NEXUS RELATÓRIOS',
+          navigatorKey: navigatorKey,
           debugShowCheckedModeBanner: false,
           themeMode: currentMode,
           theme: ThemeData(
@@ -80,7 +111,7 @@ class AppSecretaria extends StatelessWidget {
               foregroundColor: Colors.white,
             ),
           ),
-          home: const LoginScreen(),
+          home: startLoggedIn ? const HomeScreen() : const LoginScreen(),
         );
       },
     );
