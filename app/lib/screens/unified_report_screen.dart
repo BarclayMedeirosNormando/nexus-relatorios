@@ -670,7 +670,12 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
 
   Future<void> _pickImage(ImageSource source) async {
     try {
-      final pickedFile = await _picker.pickImage(source: source, imageQuality: 80);
+      final pickedFile = await _picker.pickImage(
+        source: source,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 70,
+      );
       if (pickedFile != null) {
         setState(() => _selectedPhotos.add(PhotoItem(path: pickedFile.path, comment: '')));
       }

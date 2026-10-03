@@ -1,3 +1,4 @@
+import '../services/local_store.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
@@ -242,7 +243,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     bool cacheModified = false;
     try {
-      final String? reportsJson = prefs.getString('local_reports');
+      final String? reportsJson = await LocalStore.getString('local_reports');
       if (reportsJson != null) {
         final List<dynamic> decoded = jsonDecode(reportsJson);
         final loadedReports = <ReportModel>[];
@@ -333,10 +334,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _saveReportsToPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
     final uniqueList = _dedupeReportsById(_reports);
     final String encoded = jsonEncode(uniqueList.map((r) => r.toJson()).toList());
-    await prefs.setString('local_reports', encoded);
+    await LocalStore.setString('local_reports', encoded);
   }
 
   void _addNewReport(ReportModel report) {
@@ -858,7 +858,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
 
     if (source != null) {
-      final XFile? image = await picker.pickImage(source: source, imageQuality: 70);
+      final XFile? image = await picker.pickImage(source: source, maxWidth: 512, maxHeight: 512, imageQuality: 70);
       if (image != null) {
         String pathToSave = image.path;
         if (kIsWeb) {

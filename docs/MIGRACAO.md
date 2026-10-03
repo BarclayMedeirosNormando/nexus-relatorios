@@ -31,10 +31,13 @@ segue funcionando em paralelo até o corte.
 1. Acesse script.google.com → **Novo projeto** → nome `Nexus Relatorios API v3`.
    Use a **mesma conta Google dona da planilha e da pasta de fotos** (hoje: a conta que criou a planilha).
 2. Cole o conteúdo de `apps_script/Code.gs` (substitui o `Code.gs` padrão).
-3. Execute **`setupInicial`** (autorize Planilhas e Drive). Ele grava `SPREADSHEET_ID`, gera `TOKEN_SECRET`
-   e deixa `REQUIRE_TOKEN=false` (modo compatível).
-4. **Configurações do projeto → Propriedades do script → adicionar** `DRIVE_FOLDER_ID` = ID anotado na Fase 0.
-5. Execute **`testarConexao`** e confira no log: nome da planilha, as 7 abas com contagem de linhas
+3. **Antes de rodar qualquer coisa**: em **Configurações do projeto → Propriedades do script → Adicionar propriedade**,
+   crie `DRIVE_FOLDER_ID` = ID da pasta de fotos anotado na Fase 0. (Sem isso, se o script não achar uma pasta
+   `AppSecretaria_Fotos` no Drive da conta, ele **cria uma pasta vazia nova** em vez de usar a antiga.)
+4. Execute **`setupInicial`** (autorize Planilhas e Drive). Ele só grava propriedades do script — `SPREADSHEET_ID`,
+   um `TOKEN_SECRET` aleatório e `REQUIRE_TOKEN=false` (modo compatível) — e depois chama `testarConexao`,
+   que apenas lê e escreve no log. **Não altera a planilha.**
+5. Confira o log do `setupInicial` (ou execute **`testarConexao`**) e confira no log: nome da planilha, as 7 abas com contagem de linhas
    (RELATORIOS ≈ 21, Escolas ≈ 674, Técnicos ≈ 16, Funcionarios ≈ 28.546) e o nome da pasta de fotos.
 6. **Implantar → Nova implantação → App da Web** — *Executar como:* **Eu** · *Quem tem acesso:* **Qualquer pessoa**.
    Copie a URL `https://script.google.com/macros/s/…/exec`.
@@ -122,9 +125,9 @@ Na Fase 4, `desativarSeguranca` volta ao modo compatível imediatamente; se nece
 
 ## Pendências conhecidas (fase 2 do projeto, não bloqueiam o PWA)
 
-1. **Fila offline na web**: `shared_preferences` vira `localStorage` (~5 MB) e a fila guarda fotos em base64 —
-   estoura com poucos relatórios. Migrar a fila para IndexedDB (`sembast_web`/`idb_shim`) e reduzir fotos
-   (≈1280 px, JPEG 70%) antes de enfileirar.
+1. ~~**Fila offline na web**~~ **Resolvido:** a fila offline, os relatórios locais e o cache de funcionários agora ficam
+   no IndexedDB (`lib/services/local_store*.dart`; dados antigos do localStorage são migrados sozinhos) e as fotos são
+   reduzidas na captura (máx. 1280 px, JPEG 70%). Android/Windows continuam em SharedPreferences.
 2. **Peso do bundle**: `employee_data.dart` (2 MB) e `school_data.dart` (170 KB) estão compilados dentro do app.
    Mover para `assets/*.json` ou buscar via `buscar_funcionarios` com `{q, limit}` (já suportado no backend novo).
 3. **Cache de escolas**: a lista (673 escolas) passa de ~90 KB e o `CacheService` não guarda; cada leitura vai à planilha.

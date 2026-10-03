@@ -1,6 +1,6 @@
+import 'local_store.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/employee_model.dart';
 import 'employee_data.dart';
 import 'google_sheets_service.dart';
@@ -55,8 +55,7 @@ class EmployeeService {
 
   Future<void> _loadFromCache() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_cacheKey);
+      final raw = await LocalStore.getString(_cacheKey);
       if (raw != null && raw.isNotEmpty) {
         final List decoded = jsonDecode(raw);
         _employees = decoded
@@ -84,8 +83,7 @@ class EmployeeService {
           .toList();
       _loaded = true;
       // Persiste no cache local
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
+      await LocalStore.setString(
         _cacheKey,
         jsonEncode(data),
       );

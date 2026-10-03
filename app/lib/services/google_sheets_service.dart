@@ -1,3 +1,4 @@
+import 'local_store.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -450,7 +451,7 @@ class GoogleSheetsService {
 
     try {
       // Primeiro tenta ler como String JSON (formato atual correto)
-      final rawString = prefs.getString(_offlineQueueKey);
+      final rawString = await LocalStore.getString(_offlineQueueKey);
 
       if (rawString == null || rawString.trim().isEmpty) {
         // Sem dado na chave principal — verifica chaves legadas
@@ -467,7 +468,7 @@ class GoogleSheetsService {
 
       // JSON existe mas não é lista — corrompido
       debugPrint('Fila offline não é uma lista JSON. Limpando.');
-      await prefs.remove(_offlineQueueKey);
+      await LocalStore.remove(_offlineQueueKey);
       return [];
     } catch (e, stack) {
       // Captura TypeError de cast (List<dynamic> as String?) e qualquer outro erro
@@ -476,7 +477,7 @@ class GoogleSheetsService {
       );
       debugPrintStack(stackTrace: stack);
       try {
-        await prefs.remove(_offlineQueueKey);
+        await LocalStore.remove(_offlineQueueKey);
       } catch (_) {}
       await _cleanupLegacyKeys(prefs);
       return [];
@@ -549,18 +550,16 @@ class GoogleSheetsService {
   /// Salva a fila offline SEMPRE como String JSON usando setString.
   /// Nunca usa setStringList para evitar conflitos de tipo no SharedPreferences.
   Future<void> _saveOfflineQueue(List<Map<String, dynamic>> queue) async {
-    final prefs = await SharedPreferences.getInstance();
     if (queue.isEmpty) {
-      await prefs.remove(_offlineQueueKey);
+      await LocalStore.remove(_offlineQueueKey);
     } else {
       // setString garante que getString nunca lançará TypeError
-      await prefs.setString(_offlineQueueKey, jsonEncode(queue));
+      await LocalStore.setString(_offlineQueueKey, jsonEncode(queue));
     }
   }
 
   Future<List<ReportModel>> _loadLocalReports() async {
-    final prefs = await SharedPreferences.getInstance();
-    final reportsJson = prefs.getString(_localReportsKey);
+    final reportsJson = await LocalStore.getString(_localReportsKey);
     if (reportsJson == null || reportsJson.trim().isEmpty) return [];
 
     try {
@@ -584,9 +583,8 @@ class GoogleSheetsService {
   }
 
   Future<void> _saveLocalReports(List<ReportModel> reports) async {
-    final prefs = await SharedPreferences.getInstance();
     final uniqueReports = _dedupeReportsById(reports);
-    await prefs.setString(
+    await LocalStore.setString(
       _localReportsKey,
       jsonEncode(uniqueReports.map((report) => report.toJson()).toList()),
     );
@@ -673,7 +671,7 @@ class GoogleSheetsService {
   Future<void> clearOfflineQueueOnly() async {
     final prefs = await SharedPreferences.getInstance();
     try {
-      await prefs.remove(_offlineQueueKey);
+      await LocalStore.remove(_offlineQueueKey);
     } catch (_) {}
     await _cleanupLegacyKeys(prefs);
     debugPrint('Fila offline limpa manualmente via clearOfflineQueueOnly.');
@@ -723,10 +721,16 @@ class GoogleSheetsService {
     ];
 
     for (final key in allKeysToClean) {
-      if (!prefs.containsKey(key)) continue;
+      // A fila principal fica no LocalStore (IndexedDB na web); as demais
+      // chaves são legadas e ficam no SharedPreferences.
+      final isMainQueue = key == _offlineQueueKey;
+      if (!isMainQueue && !prefs.containsKey(key)) continue;
 
       try {
-        final value = prefs.get(key);
+        final Object? value = isMainQueue
+            ? await LocalStore.getString(key)
+            : prefs.get(key);
+        if (value == null) continue;
         List<dynamic> rawItems = [];
 
         if (value is List) {
@@ -755,7 +759,11 @@ class GoogleSheetsService {
         }
 
         if (validItems.isEmpty) {
-          await prefs.remove(key);
+          if (isMainQueue) {
+            await LocalStore.remove(key);
+          } else {
+            await prefs.remove(key);
+          }
         } else {
           if (key == _offlineQueueKey) {
             consolidatedQueue.addAll(validItems);
@@ -768,9 +776,12 @@ class GoogleSheetsService {
         debugPrint(
           'cleanupAllOfflineQueuesAndReturnCount: Erro ao limpar a chave $key: $e. Removendo chave.',
         );
-        try {
-          await prefs.remove(key);
-        } catch (_) {}
+        // Não apaga a fila principal por causa de um erro de leitura.
+        if (!isMainQueue) {
+          try {
+            await prefs.remove(key);
+          } catch (_) {}
+        }
       }
     }
 
@@ -1078,8 +1089,7 @@ class GoogleSheetsService {
   Future<void> _markLocalReportsSynced(Set<String> syncedIds) async {
     if (syncedIds.isEmpty) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    final reportsJson = prefs.getString('local_reports');
+    final reportsJson = await LocalStore.getString('local_reports');
     if (reportsJson == null || reportsJson.trim().isEmpty) return;
 
     try {
@@ -1107,7 +1117,7 @@ class GoogleSheetsService {
       }
 
       if (changed) {
-        await prefs.setString('local_reports', jsonEncode(updatedReports));
+        await LocalStore.setString('local_reports', jsonEncode(updatedReports));
         debugPrint(
           'local_reports atualizado como synced: ${syncedIds.length} item(s)',
         );
@@ -1490,10 +1500,9 @@ class GoogleSheetsService {
     final pendingIds = {...createIds, ...updateIds};
     if (pendingIds.isEmpty) return [];
 
-    final prefs = await SharedPreferences.getInstance();
     final reportsById = <String, ReportModel>{};
     try {
-      final String? reportsJson = prefs.getString('local_reports');
+      final String? reportsJson = await LocalStore.getString('local_reports');
       if (reportsJson != null) {
         final List<dynamic> decodedList = jsonDecode(reportsJson);
         for (var item in decodedList) {
@@ -1538,7 +1547,6 @@ class GoogleSheetsService {
 
   /// Retorna a lista de relatórios locais cujos IDs estão na fila de sincronização pendente
   Future<List<ReportModel>> getPendingOfflineReports() async {
-    final prefs = await SharedPreferences.getInstance();
     final queue = await normalizeOfflineQueue();
     Set<String> pendingIds = {};
     for (final item in queue) {
@@ -1558,7 +1566,7 @@ class GoogleSheetsService {
 
     List<ReportModel> localReports = [];
     try {
-      final String? reportsJson = prefs.getString('local_reports');
+      final String? reportsJson = await LocalStore.getString('local_reports');
       if (reportsJson != null) {
         final List<dynamic> decodedList = jsonDecode(reportsJson);
         for (var item in decodedList) {
