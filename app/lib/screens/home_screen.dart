@@ -1,3 +1,4 @@
+import '../utils/friendly_error.dart';
 import '../services/local_store.dart';
 import 'dart:async';
 import 'dart:io';
@@ -905,7 +906,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Falha ao enviar relatório. Ele foi mantido no dispositivo para sincronização posterior. Detalhes: $e'),
+                content: Text('Não foi possível enviar agora (${friendlyError(e)}). O relatório está salvo no aparelho e será enviado automaticamente quando houver conexão.'),
                 backgroundColor: Theme.of(context).colorScheme.error,
                 duration: const Duration(seconds: 5),
               ),
@@ -947,7 +948,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Falha ao enviar relatório. Ele foi mantido no dispositivo para sincronização posterior. Detalhes: $e'),
+                content: Text('Não foi possível enviar agora (${friendlyError(e)}). O relatório está salvo no aparelho e será enviado automaticamente quando houver conexão.'),
                 backgroundColor: Theme.of(context).colorScheme.error,
                 duration: const Duration(seconds: 5),
               ),

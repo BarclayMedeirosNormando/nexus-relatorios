@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../utils/friendly_error.dart';
 import '../services/google_sheets_service.dart';
 import '../models/report_model.dart';
 import '../utils/pdf_generator.dart';
@@ -49,7 +50,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
         });
       }
     } catch (e) {
-      debugPrint('Erro ao carregar histórico: $e');
+      debugPrint('Não foi possível carregar o histórico (${friendlyError(e)}).');
       if (mounted) {
         setState(() {
           _allHistory = [];
@@ -57,7 +58,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
           _isLoading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao carregar histórico: $e')),
+          SnackBar(content: Text('Não foi possível carregar o histórico (${friendlyError(e)}).')),
         );
       }
     }
@@ -436,7 +437,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Erro ao gerar PDF: $e')));
+        ).showSnackBar(SnackBar(content: Text('Não foi possível gerar o PDF (${friendlyError(e)}).')));
       }
     } finally {
       if (mounted) {
