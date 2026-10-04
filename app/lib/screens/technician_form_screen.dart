@@ -86,7 +86,7 @@ class _TechnicianFormScreenState extends State<TechnicianFormScreen> {
     }
   }
 
-  void _searchEmployees(String query) {
+  Future<void> _searchEmployees(String query) async {
     final q = query.trim();
     if (q.length < 2) {
       setState(() {
@@ -96,22 +96,8 @@ class _TechnicianFormScreenState extends State<TechnicianFormScreen> {
       return;
     }
 
-    final service = EmployeeService();
-    List<EmployeeModel> results;
-
-    if (RegExp(r'^\d+$').hasMatch(q)) {
-      results = service.all
-          .where((e) => e.matricula.startsWith(q))
-          .take(15)
-          .toList();
-      results.sort((a, b) {
-        if (a.matricula == q) return -1;
-        if (b.matricula == q) return 1;
-        return a.matricula.compareTo(b.matricula);
-      });
-    } else {
-      results = service.searchByName(q).take(15).toList();
-    }
+    final results = await EmployeeService().search(q);
+    if (!mounted || _searchController.text.trim() != q) return;
 
     setState(() {
       _searchResults = results;

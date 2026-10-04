@@ -2010,8 +2010,12 @@ class GoogleSheetsService {
   // ============================================================================
   // BUSCAR FUNCIONÁRIOS DA ABA "Funcionarios" DO SHEETS
   // ============================================================================
-  Future<List<Map<String, String>>> fetchFuncionarios() async {
+  Future<List<Map<String, String>>> fetchFuncionarios({String? q, int? limit}) async {
     final Map<String, dynamic> data = {'acao': 'buscar_funcionarios'};
+    if (q != null && q.trim().isNotEmpty) {
+      data['q'] = q.trim();
+      data['limit'] = limit ?? 15;
+    }
     try {
       final http.Response finalResponse = await AppsScriptClient.post(
         data,

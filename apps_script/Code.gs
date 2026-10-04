@@ -1,5 +1,5 @@
 // ============================================================
-// NEXUS RELATORIOS - Backend v3.1.0 (PWA / projeto independente)
+// NEXUS RELATORIOS - Backend v3.2.0 (PWA / projeto independente)
 // ------------------------------------------------------------
 // Origem: APPS_SCRIPT_COMPLETO.gs (v2.1.0) do repositorio AppSecretaria.
 // Mantidos SEM alteracao de comportamento: abas, cabecalhos, aliases,
@@ -17,13 +17,16 @@
 //  5. Aba de auditoria localizada sem diferenciar maiusculas/minusculas
 //     (a planilha real tem "Auditoria_Relatorios").
 //  6. Removida a metade duplicada/antiga do arquivo original.
+//  7. v3.2.0: com a seguranca ligada (ativarSeguranca), usuario que nao e ADM
+//     recebe do servidor somente os relatorios/historico em que e autor ou
+//     tecnico creditado (mesma regra que o app aplicava na tela).
 //
 // CORS (PWA): o cliente web deve enviar POST com
 // Content-Type: text/plain;charset=utf-8 (evita preflight). O corpo
 // continua sendo JSON e e lido de e.postData.contents.
 // ============================================================
 
-var APP_VERSION_BACKEND = '3.1.0';
+var APP_VERSION_BACKEND = '3.2.0';
 var DEFAULT_SPREADSHEET_ID = '1DjHVSCbakaZwXgcY1kb0x_JXFqrM5HFFaXC8SVgbF0w';
 
 function getProp_(key, fallback) {
@@ -118,6 +121,7 @@ function signToken_(tecnico) {
     id: tecnico.id || '',
     nome: tecnico.nome || '',
     email: tecnico.email || '',
+    matricula: tecnico.matricula || '',
     perm: String(tecnico.permissao || '').toUpperCase(),
     exp: new Date().getTime() + TOKEN_TTL_MS
   };
@@ -334,6 +338,10 @@ function doPost(e) {
         if (Array.isArray(payload[k])) payload[k].forEach(function(item) { if (item && typeof item === 'object') item.usuario_logado = auth.claims.nome; });
       });
     }
+
+    // Identidade verificada (somente com a seguranca ligada). Sempre sobrescreve
+    // qualquer valor enviado pelo cliente.
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) payload._claims = auth.claims || null;
 
     if (action === 'login') return loginAction(ss, payload);
     if (action === 'checar_versao' || action === 'checkVersion') return checkVersionAction(ss, payload);
@@ -713,6 +721,44 @@ function loginAction(ss, payload) {
   return resposta({status: 'error', success: false, message: 'E-mail ou senha incorretos'});
 }
 
+// Filtro por usuario no servidor (v3.2.0). So age com a seguranca ligada e
+// para quem nao e ADM. Mesma regra do app: autor ou tecnico creditado, comparando
+// nome, e-mail, matricula ou id (sem acento/caixa).
+function restrictClaims_(payload) {
+  if (!securityEnabled_()) return null;
+  var claims = payload && payload._claims;
+  if (!claims) return null;
+  if (isAdminPerm_(claims.perm)) return null;
+  return claims;
+}
+
+function userKeys_(claims) {
+  return [claims.nome, claims.email, claims.matricula, claims.id]
+    .map(normalizeText)
+    .filter(function(k) { return k; });
+}
+
+function matchesUserKeys_(value, keys) {
+  var v = normalizeText(value);
+  if (!v) return false;
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    if (k === v) return true;
+    if (k.length >= 3 && v.indexOf(k) !== -1) return true;
+    if (v.length >= 3 && k.indexOf(v) !== -1) return true;
+  }
+  return false;
+}
+
+function belongsToUser_(creator, technicians, keys) {
+  if (matchesUserKeys_(creator, keys)) return true;
+  var list = Array.isArray(technicians) ? technicians : splitList(technicians);
+  for (var i = 0; i < list.length; i++) {
+    if (matchesUserKeys_(list[i], keys)) return true;
+  }
+  return false;
+}
+
 function fetchReportsAction(ss, payload) {
   var sheet = getOrCreateRelatoriosSheet(ss);
 
@@ -721,11 +767,14 @@ function fetchReportsAction(ss, payload) {
 
   var map = getHeaderMap(sheet);
   var schoolIndex = buildSchoolIndex(ss);
+  var restrict = restrictClaims_(payload);
+  var keys = restrict ? userKeys_(restrict) : [];
   var result = [];
   for (var i = 1; i < values.length; i++) {
     var row = values[i];
     var id = getRelatorioValue(row, map, 'id', '');
     if (!id) continue;
+    if (restrict && !belongsToUser_(getRelatorioValue(row, map, 'usuario', ''), getRelatorioValue(row, map, 'tecnicos', ''), keys)) continue;
 
     var dataVisita = getRelatorioValue(row, map, 'dataVisita', '');
     var dataEnvio = getRelatorioValue(row, map, 'dataEnvio', '');
@@ -1686,11 +1735,14 @@ function fetchHistoryAction(ss, payload) {
   if (values.length <= 1) return resposta({status: 'success', success: true, data: []});
 
   var map = getHeaderMap(sheet);
+  var restrict = restrictClaims_(payload);
+  var keys = restrict ? userKeys_(restrict) : [];
   var result = [];
   for (var i = values.length - 1; i >= 1; i--) {
     var row = values[i];
     var id = getHistoricoValue(row, map, 'id', '');
     if (!id) continue;
+    if (restrict && !belongsToUser_(getHistoricoValue(row, map, 'usuario', ''), getHistoricoValue(row, map, 'tecnicos', ''), keys)) continue;
 
     var municipio = getHistoricoValue(row, map, 'municipio', '');
     var inep = getHistoricoValue(row, map, 'inep', '');

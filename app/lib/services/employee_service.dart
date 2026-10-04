@@ -2,7 +2,6 @@ import 'local_store.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show debugPrint;
 import '../models/employee_model.dart';
-import 'employee_data.dart';
 import 'google_sheets_service.dart';
 
 class EmployeeService {
@@ -17,7 +16,9 @@ class EmployeeService {
   List<EmployeeModel> _employees = [];
   bool _loaded = false;
 
-  /// Inicializa o serviço: tenta buscar do Sheets e faz fallback no estático.
+  /// Inicializa o serviço: carrega o cache local e atualiza pelo servidor.
+  /// A lista de funcionários NÃO vem mais embutida no app: ela é baixada da
+  /// planilha (aba Funcionarios) e guardada no aparelho para uso offline.
   /// Chamar uma vez no login ou na abertura do app.
   Future<void> initialize() async {
     if (_loaded) return;
@@ -27,10 +28,38 @@ class EmployeeService {
     _refreshFromSheets();
   }
 
-  /// Retorna todos os funcionários (estático como fallback inicial)
-  List<EmployeeModel> get all {
-    if (_employees.isEmpty) return allEmployees; // fallback estático
-    return _employees;
+  /// Retorna a lista guardada no aparelho (vazia até o primeiro download).
+  List<EmployeeModel> get all => _employees;
+
+  /// Busca para os campos de "Responsável": usa a lista do aparelho (funciona
+  /// offline) e, se ela ainda não existir, pergunta ao servidor (limite 15).
+  Future<List<EmployeeModel>> search(String query) async {
+    final q = query.trim();
+    if (q.length < 2) return [];
+
+    if (_employees.isNotEmpty) {
+      if (RegExp(r'^\d+$').hasMatch(q)) {
+        final res = _employees.where((e) => e.matricula.startsWith(q)).take(15).toList();
+        res.sort((a, b) {
+          if (a.matricula == q) return -1;
+          if (b.matricula == q) return 1;
+          return a.matricula.compareTo(b.matricula);
+        });
+        return res;
+      }
+      return searchByName(q).take(15).toList();
+    }
+
+    // Lista ainda não baixada: busca sob demanda no servidor.
+    try {
+      final rows = await GoogleSheetsService().fetchFuncionarios(q: q, limit: 15);
+      return rows
+          .map((e) => EmployeeModel(matricula: e['matricula'] ?? '', name: e['nome'] ?? ''))
+          .toList();
+    } catch (e) {
+      debugPrint('Erro na busca remota de funcionários: $e');
+      return [];
+    }
   }
 
   /// Busca funcionários pelo nome (case-insensitive, parcial, sem acento)

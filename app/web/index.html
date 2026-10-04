@@ -43,5 +43,27 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // Service worker próprio (abre o app sem internet e guarda os arquivos).
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('nexus_sw.js').then(function () {
+          return navigator.serviceWorker.ready;
+        }).then(function (reg) {
+          function guardar() {
+            if (!reg.active) return;
+            var urls = performance.getEntriesByType('resource')
+              .map(function (e) { return e.name; })
+              .filter(function (u) { return u.indexOf(location.origin) === 0; });
+            urls.push(location.origin + location.pathname);
+            reg.active.postMessage({ type: 'cache-urls', urls: urls });
+          }
+          guardar();
+          setTimeout(guardar, 8000);
+          setTimeout(guardar, 25000);
+        }).catch(function () {});
+      });
+    }
+  </script>
 </body>
 </html>

@@ -1547,17 +1547,7 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
             optionsBuilder: (TextEditingValue textEditingValue) {
               final q = textEditingValue.text.trim();
               if (q.length < 2) return const Iterable<EmployeeModel>.empty();
-              final service = EmployeeService();
-              if (RegExp(r'^\d+$').hasMatch(q)) {
-                final res = service.all.where((e) => e.matricula.startsWith(q)).take(15).toList();
-                res.sort((a, b) {
-                  if (a.matricula == q) return -1;
-                  if (b.matricula == q) return 1;
-                  return a.matricula.compareTo(b.matricula);
-                });
-                return res;
-              }
-              return service.searchByName(q).take(15);
+              return EmployeeService().search(q);
             },
             onSelected: (EmployeeModel selection) {
               setState(() {

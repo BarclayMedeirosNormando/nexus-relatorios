@@ -8,6 +8,7 @@ import 'services/apps_script_client.dart';
 import 'services/school_service.dart';
 import 'services/technician_service.dart';
 import 'services/employee_service.dart';
+import 'services/app_updater.dart';
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -17,7 +18,8 @@ void main() async {
   await initializeDateFormatting('pt_BR', null);
   await SchoolService().loadSchools();
   await TechnicianService().loadTechnicians();
-  EmployeeService().initialize(); // busca do Sheets em background, fallback no estático
+  EmployeeService().initialize(); // lista de funcionários: cache local + atualização em segundo plano
+  AppUpdater.start(); // web: avisa quando houver versão nova do app
 
   final prefs = await SharedPreferences.getInstance();
   final isDark = prefs.getBool('is_dark_mode') ?? false;

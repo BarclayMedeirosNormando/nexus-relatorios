@@ -16,6 +16,7 @@ import '../models/technician_model.dart';
 import '../utils/pdf_generator.dart';
 import '../widgets/app_ui.dart';
 import '../services/apps_script_client.dart';
+import '../services/app_updater.dart';
 import '../services/google_sheets_service.dart';
 import '../services/technician_service.dart';
 import 'unified_report_screen.dart';
@@ -612,6 +613,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         });
       }
       await _updateSyncCount();
+      AppUpdater.check();
     }
   }
 
@@ -1646,6 +1648,45 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  Widget _buildUpdateBanner() {
+    return ValueListenableBuilder<bool>(
+      valueListenable: AppUpdater.updateAvailable,
+      builder: (context, available, _) {
+        if (!available) return const SizedBox.shrink();
+        final colorScheme = Theme.of(context).colorScheme;
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: colorScheme.primaryContainer,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.system_update_alt_rounded,
+                  size: 20, color: colorScheme.onPrimaryContainer),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Nova versão disponível',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+              FilledButton(
+                onPressed: AppUpdater.applyUpdate,
+                child: const Text('Atualizar'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildSyncStatusChip() {
     if (_syncStatusMessage.isEmpty) return const SizedBox.shrink();
 
@@ -1685,34 +1726,56 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ? '$_syncStatusMessage · ${_lastSyncAt!.hour.toString().padLeft(2, '0')}:${_lastSyncAt!.minute.toString().padLeft(2, '0')}'
         : _syncStatusMessage;
 
+    // Com pendências, erro ou sem conexão, o aviso vira um botão "Enviar agora".
+    final canRetry =
+        !_isSyncing && (_pendingSyncCount > 0 || hasError || hasPending || isOffline);
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.10),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: color.withValues(alpha: 0.22)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 15, color: color),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: color,
-                        fontWeight: FontWeight.w700,
-                      ),
-                  overflow: TextOverflow.ellipsis,
-                ),
+            onTap: canRetry ? () => _runSync(manual: true) : null,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: color.withValues(alpha: 0.22)),
               ),
-            ],
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 15, color: color),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      label,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: color,
+                            fontWeight: FontWeight.w700,
+                          ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (canRetry) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      _pendingSyncCount > 0 ? 'Enviar agora' : 'Tentar de novo',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: color,
+                            fontWeight: FontWeight.w800,
+                            decoration: TextDecoration.underline,
+                          ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -1922,6 +1985,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         body: Column(
           children: [
             _buildProfileHeader(),
+            _buildUpdateBanner(),
             _buildSyncStatusChip(),
             _buildFilters(),
             _buildBreadcrumbs(),
