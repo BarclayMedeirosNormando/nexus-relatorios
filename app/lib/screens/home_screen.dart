@@ -1152,7 +1152,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     String nivel = '';
     if (_isAdmin) { nivel = 'Administrador'; }
     else if (_userPermission == 'OPE') { nivel = 'Operador'; }
-    else { nivel = 'Professor/Técnico'; }
+    else { nivel = 'Técnico'; }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
