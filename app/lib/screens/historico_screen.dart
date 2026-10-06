@@ -381,6 +381,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
       signatureUrl: ReportModel.asNullableString(
         h['urlAssinatura'] ?? h['signatureUrl'] ?? h['Link Assinatura'],
       ),
+      signatureUrlList: _signatureUrls(h),
     );
   }
 
@@ -572,6 +573,17 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
         );
       },
     );
+  }
+
+  List<String> _signatureUrls(Map<String, dynamic> h) {
+    final raw = JsonUtils.asString(
+      h['urlAssinatura'] ?? h['signatureUrl'] ?? h['Link Assinatura'],
+    );
+    return raw
+        .split(RegExp(r',|;|\n'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
   }
 
   void _openUrl(String url) async {
@@ -1407,19 +1419,17 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
                 Column(
                   children: [
                     if (hasSignature) ...[
-                      _buildActionButton(
-                        label: 'Ver Assinatura',
-                        icon: Icons.draw_outlined,
-                        onTap: () => _openUrl(
-                          JsonUtils.asString(
-                            h['urlAssinatura'] ??
-                                h['signatureUrl'] ??
-                                h['Link Assinatura'],
-                          ),
+                      for (final entry in _signatureUrls(h).asMap().entries) ...[
+                        _buildActionButton(
+                          label: _signatureUrls(h).length > 1
+                              ? 'Ver Assinatura ${entry.key + 1}'
+                              : 'Ver Assinatura',
+                          icon: Icons.draw_outlined,
+                          onTap: () => _openUrl(entry.value),
+                          outlined: true,
                         ),
-                        outlined: true,
-                      ),
-                      const SizedBox(height: 10),
+                        const SizedBox(height: 10),
+                      ],
                     ],
                     if (hasPhotos) ...[
                       _buildActionButton(

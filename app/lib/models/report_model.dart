@@ -511,13 +511,30 @@ class ReportModel {
     return null;
   }
 
+  /// Quando varias assinaturas vem juntas na mesma celula ("url1, url2"),
+  /// a assinatura unica usada pelas telas e a primeira.
+  static String? _firstUrl(String? value) {
+    if (value == null) return null;
+    final first = value.split(RegExp(r',|;|\n')).map((e) => e.trim()).firstWhere(
+          (e) => e.isNotEmpty,
+          orElse: () => '',
+        );
+    return first.isEmpty ? null : first;
+  }
+
   static List<String>? _readSignatureUrlList(Map<String, dynamic> json) {
     final dynamic listValue = json['signatureUrlList'];
     if (listValue == null) {
       final singleUrl = JsonUtils.asNullableString(
         json['signatureUrl'] ?? json['urlAssinatura'],
       );
-      return singleUrl == null ? null : [singleUrl];
+      if (singleUrl == null) return null;
+      final parts = singleUrl
+          .split(RegExp(r',|;|\n'))
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      return parts.isEmpty ? null : parts;
     }
     if (listValue is List) {
       final result = <String>[];
@@ -658,12 +675,12 @@ class ReportModel {
             json['Responsavel da Escola'],
       ),
       signatureBytes: _readSignatureBytes(json),
-      signatureUrl: fixedNullableString(
+      signatureUrl: _firstUrl(fixedNullableString(
         json['signatureUrl'] ??
             json['urlAssinatura'] ??
             json['Link Assinatura'] ??
             json['URL_ASSINATURA'],
-      ),
+      )),
       signatureUrlList: _readSignatureUrlList(json),
       signatureBytesList: _readSignatureBytesList(json),
       syncStatus: fixedString(json['syncStatus'] ?? 'synced'),

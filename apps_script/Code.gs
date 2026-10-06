@@ -1,5 +1,5 @@
 // ============================================================
-// NEXUS RELATORIOS - Backend v3.2.0 (PWA / projeto independente)
+// NEXUS RELATORIOS - Backend v3.2.1 (PWA / projeto independente)
 // ------------------------------------------------------------
 // Origem: APPS_SCRIPT_COMPLETO.gs (v2.1.0) do repositorio AppSecretaria.
 // Mantidos SEM alteracao de comportamento: abas, cabecalhos, aliases,
@@ -17,6 +17,7 @@
 //  5. Aba de auditoria localizada sem diferenciar maiusculas/minusculas
 //     (a planilha real tem "Auditoria_Relatorios").
 //  6. Removida a metade duplicada/antiga do arquivo original.
+//  8. v3.2.1: varias assinaturas (uma por tecnico) sao salvas e devolvidas juntas na coluna Link Assinatura.
 //  7. v3.2.0: com a seguranca ligada (ativarSeguranca), usuario que nao e ADM
 //     recebe do servidor somente os relatorios/historico em que e autor ou
 //     tecnico creditado (mesma regra que o app aplicava na tela).
@@ -26,7 +27,7 @@
 // continua sendo JSON e e lido de e.postData.contents.
 // ============================================================
 
-var APP_VERSION_BACKEND = '3.2.0';
+var APP_VERSION_BACKEND = '3.2.1';
 var DEFAULT_SPREADSHEET_ID = '1DjHVSCbakaZwXgcY1kb0x_JXFqrM5HFFaXC8SVgbF0w';
 
 function getProp_(key, fallback) {
@@ -947,15 +948,35 @@ function saveReportInternal(ss, payload, action, context) {
 function saveReportAssets(payload, oldRow, map) {
   var folder = getDriveFolder();
   var urlAssinatura = String(getValFromObj(payload, ['urlAssinaturaExistente', 'urlAssinatura', 'signatureUrl']) || '');
+  var existingSigList = getValFromObj(payload, ['signatureUrlList']);
+  if (!urlAssinatura && Array.isArray(existingSigList) && existingSigList.length) urlAssinatura = existingSigList.join(', ');
   if (!urlAssinatura && oldRow) urlAssinatura = String(getRelatorioValue(oldRow, map, 'urlAssinatura', '') || '');
 
-  var assinaturaBase64 = getValFromObj(payload, ['assinaturaBase64', 'signatureBase64']);
-  if (assinaturaBase64) {
-    var cleanSignature = String(assinaturaBase64).indexOf(',') !== -1 ? String(assinaturaBase64).split(',').pop() : String(assinaturaBase64);
-    var sigBlob = Utilities.newBlob(Utilities.base64Decode(cleanSignature), 'image/png', payload.assinaturaNome || ('assinatura_' + new Date().getTime() + '.png'));
-    var sigFile = folder.createFile(sigBlob);
-    sigFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    urlAssinatura = directDriveUrl(sigFile.getId());
+  // Varias assinaturas (uma por tecnico): salva todas e guarda as URLs separadas por ", "
+  // na mesma coluna 'Link Assinatura'. Se so vier a assinatura unica, mantem o comportamento antigo.
+  var sigList = payload.assinaturaBase64List || payload.signatureBytesList || [];
+  if (typeof sigList === 'string') {
+    try { sigList = JSON.parse(sigList); } catch (errSig) { sigList = []; }
+  }
+  if (!Array.isArray(sigList)) sigList = [];
+  var sigSources = sigList.filter(function(x) { return x; });
+  if (sigSources.length === 0) {
+    var singleSig = getValFromObj(payload, ['assinaturaBase64', 'signatureBase64']);
+    if (singleSig) sigSources = [singleSig];
+  }
+  if (sigSources.length > 0) {
+    var sigUrls = [];
+    var stamp = new Date().getTime();
+    for (var s = 0; s < sigSources.length; s++) {
+      var rawSig = String(sigSources[s]);
+      var cleanSignature = rawSig.indexOf(',') !== -1 ? rawSig.split(',').pop() : rawSig;
+      var sigName = (sigSources.length === 1 && payload.assinaturaNome) ? payload.assinaturaNome : ('assinatura_' + stamp + '_' + (s + 1) + '.png');
+      var sigBlob = Utilities.newBlob(Utilities.base64Decode(cleanSignature), 'image/png', sigName);
+      var sigFile = folder.createFile(sigBlob);
+      sigFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      sigUrls.push(directDriveUrl(sigFile.getId()));
+    }
+    urlAssinatura = sigUrls.join(', ');
   }
 
   var photos = [];
