@@ -14,6 +14,7 @@ import '../models/report_model.dart';
 import '../services/employee_service.dart';
 import '../services/google_sheets_service.dart';
 import '../services/technician_service.dart';
+import 'rich_markup.dart';
 
 class PdfGenerator {
   static const _brandBlue = PdfColor.fromInt(0xff003A5D);
@@ -67,8 +68,19 @@ class PdfGenerator {
     final boldFont = pw.Font.ttf(
       await rootBundle.load('assets/fonts/NotoSans-Bold.ttf'),
     );
+    final italicFont = pw.Font.ttf(
+      await rootBundle.load('assets/fonts/NotoSans-Italic.ttf'),
+    );
+    final boldItalicFont = pw.Font.ttf(
+      await rootBundle.load('assets/fonts/NotoSans-BoldItalic.ttf'),
+    );
     final pdf = pw.Document(
-      theme: pw.ThemeData.withFont(base: regularFont, bold: boldFont),
+      theme: pw.ThemeData.withFont(
+        base: regularFont,
+        bold: boldFont,
+        italic: italicFont,
+        boldItalic: boldItalicFont,
+      ),
     );
 
     if (kDebugMode) {
@@ -611,29 +623,69 @@ class PdfGenerator {
     });
     obs = _s(obs);
 
-    pw.Widget paragraph(String text) => pw.Paragraph(
-      text: text,
-      style: const pw.TextStyle(fontSize: 11),
-      textAlign: pw.TextAlign.left,
-    );
+    const baseStyle = pw.TextStyle(fontSize: 11);
 
-    // Se der, separa o ultimo paragrafo (curto) para ir junto com a assinatura.
-    String head = obs;
-    if (tail != null) {
-      final cut = obs.lastIndexOf('\n');
-      if (cut > 0) {
-        final last = obs.substring(cut + 1).trim();
-        if (last.isNotEmpty && last.length <= 500) {
-          head = obs.substring(0, cut).trimRight();
-          tail.add(paragraph(last));
-        }
+    // Mesma regra de formatacao da tela: **negrito**, _italico_, ++sublinhado++,
+    // "- " marcadores e "1. " lista numerada.
+    pw.Widget lineWidget(RichLine line) {
+      if (line.kind == RichLineKind.blank) return pw.SizedBox(height: 8);
+
+      final rich = pw.RichText(
+        textAlign: pw.TextAlign.left,
+        text: pw.TextSpan(
+          style: baseStyle,
+          children: [
+            for (final s in line.spans)
+              pw.TextSpan(
+                text: s.text,
+                style: pw.TextStyle(
+                  fontWeight: s.bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+                  fontStyle: s.italic ? pw.FontStyle.italic : pw.FontStyle.normal,
+                  decoration: s.underline ? pw.TextDecoration.underline : null,
+                ),
+              ),
+          ],
+        ),
+      );
+
+      if (line.kind == RichLineKind.normal) {
+        return pw.Padding(padding: const pw.EdgeInsets.only(bottom: 2), child: rich);
+      }
+      return pw.Padding(
+        padding: const pw.EdgeInsets.only(left: 6, bottom: 2),
+        child: pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.SizedBox(
+              width: line.kind == RichLineKind.bullet ? 14 : 20,
+              child: pw.Text(line.label, style: baseStyle),
+            ),
+            pw.Expanded(child: rich),
+          ],
+        ),
+      );
+    }
+
+    final lines = RichMarkup.lines(obs);
+    // Se der, a ultima linha (curta) vai junto com a assinatura.
+    if (tail != null && lines.length > 1) {
+      var lastIdx = lines.length - 1;
+      while (lastIdx > 0 && lines[lastIdx].kind == RichLineKind.blank) {
+        lastIdx--;
+      }
+      final last = lines[lastIdx];
+      if (lastIdx > 0 &&
+          last.kind != RichLineKind.blank &&
+          last.plainText.length <= 500) {
+        tail.add(lineWidget(last));
+        lines.removeRange(lastIdx, lines.length);
       }
     }
 
     return [
       _sectionTitle('2. OBSERVAÇÕES / DIAGNÓSTICO TÉCNICO'),
       pw.SizedBox(height: 6),
-      paragraph(head),
+      for (final line in lines) lineWidget(line),
     ];
   }
 

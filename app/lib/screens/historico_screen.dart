@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../utils/friendly_error.dart';
 import '../services/google_sheets_service.dart';
 import '../models/report_model.dart';
+import '../widgets/rich_text_editor.dart';
 import '../utils/pdf_generator.dart';
 import '../utils/json_utils.dart';
 import '../widgets/app_ui.dart';
@@ -1400,8 +1401,8 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
                 _buildDetailSection(
                   'Observações / Diagnóstico',
                   Icons.notes_rounded,
-                  Text(
-                    JsonUtils.asString(
+                  RichObservationText(
+                    text: JsonUtils.asString(
                       h['observacoes'] ?? h['observations'] ?? h['Observações'],
                     ),
                     style: TextStyle(

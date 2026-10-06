@@ -18,6 +18,7 @@ import '../models/technician_model.dart';
 import '../models/employee_model.dart';
 import '../services/employee_service.dart';
 import '../widgets/app_ui.dart';
+import '../widgets/rich_text_editor.dart';
 
 class UnifiedReportScreen extends StatefulWidget {
   final ReportModel? existingReport;
@@ -52,7 +53,7 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
   List<String> _selectedSubjects = [];
   List<String> _selectedTechnicians = [];
 
-  final _observationsController = TextEditingController();
+  final _observationsController = MarkupTextEditingController();
 
   final List<PhotoItem> _selectedPhotos = [];
   final List<TiMaterialItem> _tiMaterials = [];
@@ -1612,21 +1613,11 @@ class _UnifiedReportScreenState extends State<UnifiedReportScreen> with WidgetsB
     return SectionCard(
       title: 'Diagnóstico / Observações',
       icon: Icons.notes_outlined,
-      child: TextFormField(
+      child: RichTextEditor(
         controller: _observationsController,
-        maxLines: 5,
-        minLines: 5,
-        textCapitalization: TextCapitalization.sentences,
-        decoration: InputDecoration(
-          labelText: 'Descreva os detalhes da visita',
-          hintText: 'Ex: Foi realizada a manutenção...',
-          alignLabelWithHint: true,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          prefixIcon: const Padding(
-            padding: EdgeInsets.only(bottom: 80), // Alinha o ícone no topo
-            child: Icon(Icons.notes_outlined),
-          ),
-        ),
+        label: 'Descreva os detalhes da visita',
+        hint: 'Ex: Foi realizada a manutenção...',
+        minLines: 12,
         validator: (value) => (value == null || value.trim().isEmpty) ? 'Campo obrigatório' : null,
       ),
     );
