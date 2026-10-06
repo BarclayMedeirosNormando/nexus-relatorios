@@ -115,29 +115,39 @@ class PdfGenerator {
 
     final signatureBytesList = await _resolveSignatureBytesList(report);
 
-    // "Cauda" = ultimo trecho do conteudo (ultima linha da tabela ou ultimo
-    // paragrafo) que viaja junto com as assinaturas, para elas nunca ficarem
-    // sozinhas em uma pagina.
+    // Assinaturas: ficam no FIM do relatorio. Com fotos, vao depois das fotos
+    // (na ultima pagina); sem fotos, depois do conteudo. Nunca ficam sozinhas
+    // em uma pagina: sempre viajam junto com o ultimo trecho de conteudo.
+    final hasPhotoPage = pdfPhotos.isNotEmpty;
+    final signatureCount = signatureBytesList?.length ?? 0;
+    final signatureSection = _buildSignatureSection(report, signatureBytesList);
+    // Com muitas assinaturas o bloco nao cabe inteiro em uma pagina: nesse caso
+    // mantem o fluxo normal (pode quebrar).
+    final keepTogether = signatureCount <= 6;
+
+    // Container nao quebra entre paginas: ou o bloco inteiro cabe, ou vai todo
+    // para a proxima pagina junto com o ultimo trecho.
+    pw.Widget atomic(List<pw.Widget> children) => pw.Container(
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    );
+
     final tail = <pw.Widget>[];
     final hasObs =
         report.observations != null && report.observations!.trim().isNotEmpty;
     final hasMaterials =
         report.isTechnicalAnalysis && report.tiMaterials.isNotEmpty;
     final obsWidgets = hasObs
-        ? _buildObservations(report, tail: hasMaterials ? null : tail)
+        ? _buildObservations(
+            report,
+            tail: (hasMaterials || hasPhotoPage) ? null : tail,
+          )
         : <pw.Widget>[];
-    final materialWidgets =
-        hasMaterials ? _buildTiMaterials(report, tail: tail) : <pw.Widget>[];
-
-    final signatureSection = _buildSignatureSection(report, signatureBytesList);
-    // Com muitas assinaturas o bloco nao cabe inteiro em uma pagina: nesse caso
-    // mantem o fluxo normal (pode quebrar).
-    final keepTogether = (signatureBytesList?.length ?? 0) <= 6;
-    final signatureBlock = <pw.Widget>[
-      ...tail,
-      pw.SizedBox(height: 48),
-      signatureSection,
-    ];
+    final materialWidgets = hasMaterials
+        ? _buildTiMaterials(report, tail: hasPhotoPage ? null : tail)
+        : <pw.Widget>[];
 
     pdf.addPage(
       pw.MultiPage(
@@ -157,22 +167,44 @@ class PdfGenerator {
             pw.SizedBox(height: 20),
             ...materialWidgets,
           ],
-          if (keepTogether)
-            // Container nao quebra entre paginas: ou o bloco inteiro cabe, ou
-            // vai todo para a proxima pagina junto com o ultimo trecho.
-            pw.Container(
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                children: signatureBlock,
-              ),
-            )
-          else
-            ...signatureBlock,
+          if (!hasPhotoPage) ...[
+            // Sem fotos: assinatura logo apos o conteudo, junto com a "cauda".
+            if (keepTogether)
+              atomic([...tail, pw.SizedBox(height: 48), signatureSection])
+            else ...[
+              ...tail,
+              pw.SizedBox(height: 48),
+              signatureSection,
+            ],
+          ],
         ],
       ),
     );
 
-    if (pdfPhotos.isNotEmpty) {
+    if (hasPhotoPage) {
+      // Fotos lado a lado (2 por linha), comentario abaixo de cada foto.
+      final photoRows = <pw.Widget>[
+        for (var i = 0; i < pdfPhotos.length; i += 2)
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(child: _buildPhotoCell(pdfPhotos[i])),
+              pw.SizedBox(width: 16),
+              pw.Expanded(
+                child: i + 1 < pdfPhotos.length
+                    ? _buildPhotoCell(pdfPhotos[i + 1])
+                    : pw.SizedBox(),
+              ),
+            ],
+          ),
+      ];
+      // A ultima linha de fotos viaja junto com as assinaturas (so quando sao
+      // poucas assinaturas; senao o bloco ficaria maior que a pagina).
+      final attachLastRow = keepTogether && signatureCount <= 4;
+      final rowsBefore = attachLastRow
+          ? photoRows.sublist(0, photoRows.length - 1)
+          : photoRows;
+
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
@@ -180,20 +212,16 @@ class PdfGenerator {
           build: (pw.Context context) => [
             _sectionTitle('3. ANEXOS - FOTOS DA VISITA'),
             pw.SizedBox(height: 6),
-            for (var i = 0; i < pdfPhotos.length; i += 2) ...[
-              pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Expanded(child: _buildPhotoCell(pdfPhotos[i])),
-                  pw.SizedBox(width: 16),
-                  pw.Expanded(
-                    child: i + 1 < pdfPhotos.length
-                        ? _buildPhotoCell(pdfPhotos[i + 1])
-                        : pw.SizedBox(),
-                  ),
-                ],
-              ),
-              pw.SizedBox(height: 12),
+            for (final row in rowsBefore) ...[row, pw.SizedBox(height: 12)],
+            if (keepTogether)
+              atomic([
+                if (attachLastRow) photoRows.last,
+                pw.SizedBox(height: 40),
+                signatureSection,
+              ])
+            else ...[
+              pw.SizedBox(height: 40),
+              signatureSection,
             ],
           ],
         ),
