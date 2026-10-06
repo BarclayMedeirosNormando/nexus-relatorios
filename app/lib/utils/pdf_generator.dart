@@ -103,6 +103,30 @@ class PdfGenerator {
 
     final signatureBytesList = await _resolveSignatureBytesList(report);
 
+    // "Cauda" = ultimo trecho do conteudo (ultima linha da tabela ou ultimo
+    // paragrafo) que viaja junto com as assinaturas, para elas nunca ficarem
+    // sozinhas em uma pagina.
+    final tail = <pw.Widget>[];
+    final hasObs =
+        report.observations != null && report.observations!.trim().isNotEmpty;
+    final hasMaterials =
+        report.isTechnicalAnalysis && report.tiMaterials.isNotEmpty;
+    final obsWidgets = hasObs
+        ? _buildObservations(report, tail: hasMaterials ? null : tail)
+        : <pw.Widget>[];
+    final materialWidgets =
+        hasMaterials ? _buildTiMaterials(report, tail: tail) : <pw.Widget>[];
+
+    final signatureSection = _buildSignatureSection(report, signatureBytesList);
+    // Com muitas assinaturas o bloco nao cabe inteiro em uma pagina: nesse caso
+    // mantem o fluxo normal (pode quebrar).
+    final keepTogether = (signatureBytesList?.length ?? 0) <= 6;
+    final signatureBlock = <pw.Widget>[
+      ...tail,
+      pw.SizedBox(height: 48),
+      signatureSection,
+    ];
+
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -113,17 +137,25 @@ class PdfGenerator {
           _buildReportTitle(),
           pw.SizedBox(height: 20),
           _buildReportDetails(report),
-          if (report.observations != null &&
-              report.observations!.trim().isNotEmpty) ...[
+          if (hasObs) ...[
             pw.SizedBox(height: 20),
-            ..._buildObservations(report),
+            ...obsWidgets,
           ],
-          if (report.isTechnicalAnalysis && report.tiMaterials.isNotEmpty) ...[
+          if (hasMaterials) ...[
             pw.SizedBox(height: 20),
-            ..._buildTiMaterials(report),
+            ...materialWidgets,
           ],
-          pw.SizedBox(height: 48),
-          _buildSignatureSection(report, signatureBytesList),
+          if (keepTogether)
+            // Container nao quebra entre paginas: ou o bloco inteiro cabe, ou
+            // vai todo para a proxima pagina junto com o ultimo trecho.
+            pw.Container(
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: signatureBlock,
+              ),
+            )
+          else
+            ...signatureBlock,
         ],
       ),
     );
@@ -568,73 +600,131 @@ class PdfGenerator {
     );
   }
 
-  static List<pw.Widget> _buildObservations(ReportModel report) {
+  static List<pw.Widget> _buildObservations(
+    ReportModel report, {
+    List<pw.Widget>? tail,
+  }) {
     var obs = report.observations ?? '';
     obs = obs.replaceAllMapped(RegExp(r'\S{40,}'), (match) {
       final word = match.group(0)!;
       return word.replaceAllMapped(RegExp(r'.{40}'), (m) => '${m.group(0)} ');
     });
+    obs = _s(obs);
+
+    pw.Widget paragraph(String text) => pw.Paragraph(
+      text: text,
+      style: const pw.TextStyle(fontSize: 11),
+      textAlign: pw.TextAlign.left,
+    );
+
+    // Se der, separa o ultimo paragrafo (curto) para ir junto com a assinatura.
+    String head = obs;
+    if (tail != null) {
+      final cut = obs.lastIndexOf('\n');
+      if (cut > 0) {
+        final last = obs.substring(cut + 1).trim();
+        if (last.isNotEmpty && last.length <= 500) {
+          head = obs.substring(0, cut).trimRight();
+          tail.add(paragraph(last));
+        }
+      }
+    }
 
     return [
       _sectionTitle('2. OBSERVAÇÕES / DIAGNÓSTICO TÉCNICO'),
       pw.SizedBox(height: 6),
-      pw.Paragraph(
-        text: _s(obs),
-        style: const pw.TextStyle(fontSize: 11),
-        textAlign: pw.TextAlign.left,
-      ),
+      paragraph(head),
     ];
   }
 
-  static List<pw.Widget> _buildTiMaterials(ReportModel report) {
+  static List<pw.Widget> _buildTiMaterials(
+    ReportModel report, {
+    List<pw.Widget>? tail,
+  }) {
     final grouped = <String, List<TiMaterialItem>>{};
     for (final item in report.tiMaterials) {
       grouped.putIfAbsent(item.ambiente, () => []).add(item);
     }
 
-    return [
+    const Map<int, pw.TableColumnWidth> widths = {
+      0: pw.FlexColumnWidth(2),
+      1: pw.FlexColumnWidth(2),
+      2: pw.FlexColumnWidth(1.2),
+      3: pw.FlexColumnWidth(2.2),
+    };
+
+    pw.TableRow headerRow() => pw.TableRow(
+      children: [
+        _labelCell('Equipamento/Material'),
+        _labelCell('Marca/Modelo'),
+        _labelCell('Quantidade'),
+        _labelCell('Observação'),
+      ],
+    );
+
+    pw.TableRow itemRow(TiMaterialItem item) => pw.TableRow(
+      children: [
+        _valueCell(_valueOrDefault(item.equipamento)),
+        _valueCell(_valueOrDefault(item.marcaModelo)),
+        _valueCell(_valueOrDefault(item.quantidade)),
+        _valueCell(_valueOrDefault(item.observacao)),
+      ],
+    );
+
+    pw.Widget table(List<pw.TableRow> rows) => pw.Table(
+      border: pw.TableBorder.all(color: _borderColor, width: 0.5),
+      columnWidths: widths,
+      children: rows,
+    );
+
+    pw.Widget groupTitle(String name) => pw.Text(
+      _s(name),
+      style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+    );
+
+    final result = <pw.Widget>[
       _sectionTitle('Materiais de TI necessários'),
       pw.SizedBox(height: 8),
-      ...grouped.entries.expand(
-        (entry) => [
-          pw.Text(
-            _s(entry.key),
-            style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
-          ),
-          pw.SizedBox(height: 4),
-          pw.Table(
-            border: pw.TableBorder.all(color: _borderColor, width: 0.5),
-            columnWidths: const {
-              0: pw.FlexColumnWidth(2),
-              1: pw.FlexColumnWidth(2),
-              2: pw.FlexColumnWidth(1.2),
-              3: pw.FlexColumnWidth(2.2),
-            },
-            children: [
-              pw.TableRow(
-                children: [
-                  _labelCell('Equipamento/Material'),
-                  _labelCell('Marca/Modelo'),
-                  _labelCell('Quantidade'),
-                  _labelCell('Observação'),
-                ],
-              ),
-              ...entry.value.map(
-                (item) => pw.TableRow(
-                  children: [
-                    _valueCell(_valueOrDefault(item.equipamento)),
-                    _valueCell(_valueOrDefault(item.marcaModelo)),
-                    _valueCell(_valueOrDefault(item.quantidade)),
-                    _valueCell(_valueOrDefault(item.observacao)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          pw.SizedBox(height: 10),
-        ],
-      ),
     ];
+
+    final entries = grouped.entries.toList();
+    for (var g = 0; g < entries.length; g++) {
+      final entry = entries[g];
+      final isLastGroup = g == entries.length - 1;
+
+      if (isLastGroup && tail != null) {
+        if (entry.value.length == 1) {
+          // Grupo de 1 item: o grupo inteiro vai junto com a assinatura.
+          tail
+            ..add(groupTitle(entry.key))
+            ..add(pw.SizedBox(height: 4))
+            ..add(table([headerRow(), itemRow(entry.value.first)]));
+        } else {
+          // Separa so a ultima linha da tabela (mesmas colunas e bordas).
+          result
+            ..add(groupTitle(entry.key))
+            ..add(pw.SizedBox(height: 4))
+            ..add(
+              table([
+                headerRow(),
+                ...entry.value
+                    .sublist(0, entry.value.length - 1)
+                    .map(itemRow),
+              ]),
+            );
+          tail.add(table([itemRow(entry.value.last)]));
+        }
+        continue;
+      }
+
+      result
+        ..add(groupTitle(entry.key))
+        ..add(pw.SizedBox(height: 4))
+        ..add(table([headerRow(), ...entry.value.map(itemRow)]))
+        ..add(pw.SizedBox(height: 10));
+    }
+
+    return result;
   }
 
   /// Uma foto com o comentario logo abaixo (usada na grade de 2 colunas).
