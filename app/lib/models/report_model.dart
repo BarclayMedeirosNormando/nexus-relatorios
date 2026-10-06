@@ -419,9 +419,18 @@ class ReportModel {
       }
     }
 
+    // A mesma foto pode vir de varias fontes (photos, fotosJson, urlFotos).
+    // Mantem a primeira e preserva o comentario, que so existe em algumas delas.
     final unique = <String, PhotoItem>{};
     for (final photo in result) {
-      unique[photo.path] = photo;
+      final existing = unique[photo.path];
+      if (existing == null) {
+        unique[photo.path] = photo;
+      } else if ((existing.comment == null || existing.comment!.trim().isEmpty) &&
+          photo.comment != null &&
+          photo.comment!.trim().isNotEmpty) {
+        existing.comment = photo.comment;
+      }
     }
 
     return unique.values.toList();

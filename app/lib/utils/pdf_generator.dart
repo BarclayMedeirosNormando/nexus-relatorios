@@ -136,28 +136,21 @@ class PdfGenerator {
           build: (pw.Context context) => [
             _sectionTitle('3. ANEXOS - FOTOS DA VISITA'),
             pw.SizedBox(height: 6),
-            ...pdfPhotos.map(
-              (entry) => pw.Column(
+            for (var i = 0; i < pdfPhotos.length; i += 2) ...[
+              pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Container(
-                    width: 240,
-                    child: pw.Image(entry.key, fit: pw.BoxFit.contain),
+                  pw.Expanded(child: _buildPhotoCell(pdfPhotos[i])),
+                  pw.SizedBox(width: 16),
+                  pw.Expanded(
+                    child: i + 1 < pdfPhotos.length
+                        ? _buildPhotoCell(pdfPhotos[i + 1])
+                        : pw.SizedBox(),
                   ),
-                  if (entry.value != null &&
-                      entry.value!.trim().isNotEmpty) ...[
-                    pw.SizedBox(height: 6),
-                    pw.Text(
-                      'Comentário: ${_s(entry.value!)}',
-                      style: const pw.TextStyle(fontSize: 11),
-                    ),
-                  ],
-                  pw.SizedBox(height: 16),
-                  pw.Divider(color: PdfColors.grey300),
-                  pw.SizedBox(height: 16),
                 ],
               ),
-            ),
+              pw.SizedBox(height: 12),
+            ],
           ],
         ),
       );
@@ -642,6 +635,31 @@ class PdfGenerator {
         ],
       ),
     ];
+  }
+
+  /// Uma foto com o comentario logo abaixo (usada na grade de 2 colunas).
+  static pw.Widget _buildPhotoCell(MapEntry<pw.MemoryImage, String?> entry) {
+    final comment = entry.value?.trim() ?? '';
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      children: [
+        pw.Container(
+          height: 210,
+          alignment: pw.Alignment.center,
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: PdfColors.grey300, width: 0.6),
+          ),
+          child: pw.Image(entry.key, fit: pw.BoxFit.contain),
+        ),
+        if (comment.isNotEmpty) ...[
+          pw.SizedBox(height: 4),
+          pw.Text(
+            _s(comment),
+            style: const pw.TextStyle(fontSize: 9.5),
+          ),
+        ],
+      ],
+    );
   }
 
   static pw.Widget _buildSignatureSection(
