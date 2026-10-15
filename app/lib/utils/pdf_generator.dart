@@ -100,15 +100,42 @@ class PdfGenerator {
     }
 
     final pdfPhotos = <MapEntry<pw.MemoryImage, String?>>[];
+    var photosFailed = 0;
     if (includeImages && report.photos.isNotEmpty) {
-      for (final photo in report.photos) {
-        try {
-          final bytes = await _loadImageBytes(photo.path);
-          if (bytes != null && bytes.isNotEmpty) {
-            pdfPhotos.add(MapEntry(pw.MemoryImage(bytes), photo.comment));
+      // Baixa em lotes de 3 (mantendo a ordem) e tenta de novo as que falham,
+      // para que TODAS as fotos do relatorio entrem no PDF.
+      final photos = report.photos;
+      final loaded = List<Uint8List?>.filled(photos.length, null);
+      Future<void> loadOne(int i) async {
+        for (var attempt = 0; attempt < 3; attempt++) {
+          try {
+            final bytes = await _loadImageBytes(photos[i].path);
+            if (bytes != null && bytes.isNotEmpty) {
+              loaded[i] = bytes;
+              return;
+            }
+          } catch (e) {
+            debugPrint('Falha ao carregar foto para PDF (${photos[i].path}): $e');
           }
+          await Future.delayed(Duration(milliseconds: 600 * (attempt + 1)));
+        }
+      }
+
+      for (var start = 0; start < photos.length; start += 3) {
+        final end = start + 3 < photos.length ? start + 3 : photos.length;
+        await Future.wait([for (var i = start; i < end; i++) loadOne(i)]);
+      }
+      for (var i = 0; i < photos.length; i++) {
+        final bytes = loaded[i];
+        if (bytes == null) {
+          photosFailed++;
+          continue;
+        }
+        try {
+          pdfPhotos.add(MapEntry(pw.MemoryImage(bytes), photos[i].comment));
         } catch (e) {
-          debugPrint('Falha ao carregar foto para PDF (${photo.path}): $e');
+          photosFailed++;
+          debugPrint('Imagem invalida no PDF (${photos[i].path}): $e');
         }
       }
     }
@@ -231,7 +258,7 @@ class PdfGenerator {
     return _PdfBuildResult(
       bytes: await pdf.save(),
       requestedPhotosMissing:
-          includeImages && report.photos.isNotEmpty && pdfPhotos.isEmpty,
+          includeImages && report.photos.isNotEmpty && photosFailed > 0,
     );
   }
 

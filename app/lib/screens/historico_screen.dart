@@ -428,7 +428,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Não foi possível carregar algumas fotos. O PDF foi gerado com as imagens disponíveis.',
+              'Algumas fotos não puderam ser carregadas (verifique a internet e gere o PDF de novo para incluir todas).',
             ),
           ),
         );

@@ -1636,7 +1636,7 @@ function fetchDriveFileAction(payload) {
 
   var blob = file.getBlob();
   var bytes = blob.getBytes();
-  if (bytes.length > 6 * 1024 * 1024) {
+  if (bytes.length > 15 * 1024 * 1024) {
     return resposta({status: 'error', success: false, message: 'Arquivo muito grande'});
   }
   return resposta({
