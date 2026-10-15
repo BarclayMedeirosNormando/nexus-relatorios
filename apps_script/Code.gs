@@ -1,5 +1,5 @@
 // ============================================================
-// NEXUS RELATORIOS - Backend v3.2.2 (PWA / projeto independente)
+// NEXUS RELATORIOS - Backend v3.2.5 (PWA / projeto independente)
 // ------------------------------------------------------------
 // Origem: APPS_SCRIPT_COMPLETO.gs (v2.1.0) do repositorio AppSecretaria.
 // Mantidos SEM alteracao de comportamento: abas, cabecalhos, aliases,
@@ -19,6 +19,9 @@
 //  6. Removida a metade duplicada/antiga do arquivo original.
 //  8. v3.2.1: varias assinaturas (uma por tecnico) sao salvas e devolvidas juntas na coluna Link Assinatura.
 //  9. v3.2.2: fotos de ate 15 MB podem ser baixadas pelo PWA para montar o PDF.
+// 10. v3.2.3: buscar_arquivo entrega miniatura redimensionada (w1600, EXIF aplicado); cai no original se falhar.
+// 11. v3.2.4: buscar_arquivo registra no log o motivo de cada recusa.
+// 12. v3.2.5: autorizarServicos() (rodar 1x) libera UrlFetchApp para converter HEIC em JPEG via miniatura.
 //  7. v3.2.0: com a seguranca ligada (ativarSeguranca), usuario que nao e ADM
 //     recebe do servidor somente os relatorios/historico em que e autor ou
 //     tecnico creditado (mesma regra que o app aplicava na tela).
@@ -28,7 +31,7 @@
 // continua sendo JSON e e lido de e.postData.contents.
 // ============================================================
 
-var APP_VERSION_BACKEND = '3.2.2';
+var APP_VERSION_BACKEND = '3.2.5';
 var DEFAULT_SPREADSHEET_ID = '1DjHVSCbakaZwXgcY1kb0x_JXFqrM5HFFaXC8SVgbF0w';
 
 function getProp_(key, fallback) {
@@ -1618,12 +1621,13 @@ function fetchDriveFileAction(payload) {
   var raw = String(getValFromObj(payload, ['id', 'fileId', 'url']) || '');
   var m = raw.match(/[?&]id=([-\w]{20,})/) || raw.match(/\/d\/([-\w]{20,})/) || raw.match(/^([-\w]{20,})$/);
   var fileId = m ? m[1] : '';
-  if (!fileId) return resposta({status: 'error', success: false, message: 'Arquivo inválido'});
+  if (!fileId) { Logger.log('buscar_arquivo: id invalido (%s)', raw.slice(0, 60)); return resposta({status: 'error', success: false, message: 'Arquivo inválido'}); }
 
   var file;
   try {
     file = DriveApp.getFileById(fileId);
   } catch (err) {
+    Logger.log('buscar_arquivo: %s NAO ENCONTRADO: %s', fileId, err);
     return resposta({status: 'error', success: false, message: 'Arquivo não encontrado'});
   }
 
@@ -1633,18 +1637,58 @@ function fetchDriveFileAction(payload) {
   while (parents.hasNext()) {
     if (parents.next().getId() === folderId) { inFolder = true; break; }
   }
-  if (!inFolder) return resposta({status: 'error', success: false, message: 'Arquivo fora da pasta de fotos'});
+  if (!inFolder) {
+    Logger.log('buscar_arquivo: %s FORA DA PASTA (nome=%s)', fileId, file.getName());
+    return resposta({status: 'error', success: false, message: 'Arquivo fora da pasta de fotos'});
+  }
 
-  var blob = file.getBlob();
-  var bytes = blob.getBytes();
+  // Tenta primeiro a miniatura redimensionada pelo proprio Drive (rapida, leve e
+  // ja com a rotacao EXIF aplicada). Se falhar, usa o arquivo original.
+  var maxSize = parseInt(getValFromObj(payload, ['maxSize', 'tamanho']), 10) || 1600;
+  var bytes = null;
+  var mime = '';
+  try {
+    var thumb = UrlFetchApp.fetch(
+      'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w' + maxSize,
+      {headers: {Authorization: 'Bearer ' + ScriptApp.getOAuthToken()}, muteHttpExceptions: true}
+    );
+    if (thumb.getResponseCode() !== 200) {
+      Logger.log('buscar_arquivo: %s miniatura HTTP %s', fileId, thumb.getResponseCode());
+    }
+    if (thumb.getResponseCode() === 200) {
+      var tType = String(thumb.getHeaders()['Content-Type'] || thumb.getHeaders()['content-type'] || '');
+      if (/image\/(jpeg|png)/i.test(tType)) {
+        bytes = thumb.getContent();
+        mime = tType;
+      }
+    }
+  } catch (errThumb) {
+    Logger.log('buscar_arquivo: %s miniatura falhou: %s', fileId, errThumb);
+    bytes = null;
+  }
+  if (!bytes || !bytes.length) {
+    var blob = file.getBlob();
+    bytes = blob.getBytes();
+    mime = blob.getContentType();
+  }
+  Logger.log('buscar_arquivo: %s ok (%s bytes, %s)', fileId, bytes.length, mime);
   if (bytes.length > 15 * 1024 * 1024) {
+    Logger.log('buscar_arquivo: %s MUITO GRANDE', fileId);
     return resposta({status: 'error', success: false, message: 'Arquivo muito grande'});
   }
   return resposta({
     status: 'success', success: true,
-    nome: file.getName(), mimeType: blob.getContentType(),
+    nome: file.getName(), mimeType: mime,
     base64: Utilities.base64Encode(bytes)
   });
+}
+
+// Rode UMA VEZ no editor (Executar) para o Google pedir a permissao de
+// "conectar a servicos externos", usada para converter fotos HEIC (iPhone) em JPEG.
+function autorizarServicos() {
+  var r = UrlFetchApp.fetch('https://www.google.com/generate_204', {muteHttpExceptions: true});
+  var pasta = getDriveFolder();
+  Logger.log('Autorizado. Internet HTTP %s. Pasta de fotos: %s', r.getResponseCode(), pasta.getName());
 }
 
 function directDriveUrl(fileId) {

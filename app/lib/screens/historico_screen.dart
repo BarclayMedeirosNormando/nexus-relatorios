@@ -1430,7 +1430,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
                         const SizedBox(height: 10),
                       ],
                     ],
-                    if (hasPhotos) ...[
+                    if (hasPhotos && _extractPhotosFromHistory(h).isEmpty) ...[
                       _buildActionButton(
                         label: 'Ver Fotos',
                         icon: Icons.photo_library_outlined,
@@ -1445,6 +1445,20 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
                         outlined: true,
                       ),
                       const SizedBox(height: 10),
+                    ],
+                    if (hasPhotos) ...[
+                      for (final entry
+                          in _extractPhotosFromHistory(h).asMap().entries) ...[
+                        _buildActionButton(
+                          label: _extractPhotosFromHistory(h).length > 1
+                              ? 'Ver Foto ${entry.key + 1}'
+                              : 'Ver Foto',
+                          icon: Icons.photo_library_outlined,
+                          onTap: () => _openUrl(entry.value.path),
+                          outlined: true,
+                        ),
+                        const SizedBox(height: 10),
+                      ],
                     ],
                     if (!hasSignature && !hasPhotos)
                       Padding(
