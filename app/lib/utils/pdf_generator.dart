@@ -99,7 +99,7 @@ class PdfGenerator {
       debugPrint('Nao foi possivel carregar brasao: $e');
     }
 
-    final pdfPhotos = <MapEntry<pw.MemoryImage, String?>>[];
+    final pdfPhotos = <MapEntry<pw.MemoryImage?, String?>>[];
     var photosFailed = 0;
     if (includeImages && report.photos.isNotEmpty) {
       // Baixa em lotes de 3 (mantendo a ordem) e tenta de novo as que falham,
@@ -107,7 +107,7 @@ class PdfGenerator {
       final photos = report.photos;
       final loaded = List<Uint8List?>.filled(photos.length, null);
       Future<void> loadOne(int i) async {
-        for (var attempt = 0; attempt < 3; attempt++) {
+        for (var attempt = 0; attempt < 4; attempt++) {
           try {
             final bytes = await _loadImageBytes(photos[i].path);
             if (bytes != null && bytes.isNotEmpty) {
@@ -117,24 +117,26 @@ class PdfGenerator {
           } catch (e) {
             debugPrint('Falha ao carregar foto para PDF (${photos[i].path}): $e');
           }
-          await Future.delayed(Duration(milliseconds: 600 * (attempt + 1)));
+          await Future.delayed(Duration(milliseconds: 1200 * (attempt + 1)));
         }
       }
 
-      for (var start = 0; start < photos.length; start += 3) {
-        final end = start + 3 < photos.length ? start + 3 : photos.length;
+      for (var start = 0; start < photos.length; start += 2) {
+        final end = start + 2 < photos.length ? start + 2 : photos.length;
         await Future.wait([for (var i = start; i < end; i++) loadOne(i)]);
       }
       for (var i = 0; i < photos.length; i++) {
         final bytes = loaded[i];
         if (bytes == null) {
           photosFailed++;
+          pdfPhotos.add(MapEntry(null, photos[i].comment));
           continue;
         }
         try {
           pdfPhotos.add(MapEntry(pw.MemoryImage(bytes), photos[i].comment));
         } catch (e) {
           photosFailed++;
+          pdfPhotos.add(MapEntry(null, photos[i].comment));
           debugPrint('Imagem invalida no PDF (${photos[i].path}): $e');
         }
       }
@@ -146,6 +148,7 @@ class PdfGenerator {
     // (na ultima pagina); sem fotos, depois do conteudo. Nunca ficam sozinhas
     // em uma pagina: sempre viajam junto com o ultimo trecho de conteudo.
     final hasPhotoPage = pdfPhotos.isNotEmpty;
+    if (kDebugMode) debugPrint('Fotos no PDF: ${pdfPhotos.length - photosFailed}/${pdfPhotos.length}');
     final signatureCount = signatureBytesList?.length ?? 0;
     final signatureSection = _buildSignatureSection(report, signatureBytesList);
     // Com muitas assinaturas o bloco nao cabe inteiro em uma pagina: nesse caso
@@ -835,7 +838,7 @@ class PdfGenerator {
   }
 
   /// Uma foto com o comentario logo abaixo (usada na grade de 2 colunas).
-  static pw.Widget _buildPhotoCell(MapEntry<pw.MemoryImage, String?> entry) {
+  static pw.Widget _buildPhotoCell(MapEntry<pw.MemoryImage?, String?> entry) {
     final comment = entry.value?.trim() ?? '';
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
@@ -846,7 +849,15 @@ class PdfGenerator {
           decoration: pw.BoxDecoration(
             border: pw.Border.all(color: PdfColors.grey300, width: 0.6),
           ),
-          child: pw.Image(entry.key, fit: pw.BoxFit.contain),
+          child: entry.key == null
+              ? pw.Text(
+                  'Foto não carregada',
+                  style: const pw.TextStyle(
+                    fontSize: 9,
+                    color: PdfColors.grey600,
+                  ),
+                )
+              : pw.Image(entry.key!, fit: pw.BoxFit.contain),
         ),
         if (comment.isNotEmpty) ...[
           pw.SizedBox(height: 4),
