@@ -1,5 +1,5 @@
 // ============================================================
-// NEXUS RELATORIOS - Backend v3.2.1 (PWA / projeto independente)
+// NEXUS RELATORIOS - Backend v3.2.2 (PWA / projeto independente)
 // ------------------------------------------------------------
 // Origem: APPS_SCRIPT_COMPLETO.gs (v2.1.0) do repositorio AppSecretaria.
 // Mantidos SEM alteracao de comportamento: abas, cabecalhos, aliases,
@@ -18,6 +18,7 @@
 //     (a planilha real tem "Auditoria_Relatorios").
 //  6. Removida a metade duplicada/antiga do arquivo original.
 //  8. v3.2.1: varias assinaturas (uma por tecnico) sao salvas e devolvidas juntas na coluna Link Assinatura.
+//  9. v3.2.2: fotos de ate 15 MB podem ser baixadas pelo PWA para montar o PDF.
 //  7. v3.2.0: com a seguranca ligada (ativarSeguranca), usuario que nao e ADM
 //     recebe do servidor somente os relatorios/historico em que e autor ou
 //     tecnico creditado (mesma regra que o app aplicava na tela).
@@ -27,7 +28,7 @@
 // continua sendo JSON e e lido de e.postData.contents.
 // ============================================================
 
-var APP_VERSION_BACKEND = '3.2.1';
+var APP_VERSION_BACKEND = '3.2.2';
 var DEFAULT_SPREADSHEET_ID = '1DjHVSCbakaZwXgcY1kb0x_JXFqrM5HFFaXC8SVgbF0w';
 
 function getProp_(key, fallback) {

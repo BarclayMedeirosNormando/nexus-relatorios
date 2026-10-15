@@ -281,49 +281,47 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
   }
 
   List<PhotoItem> _extractPhotosFromHistory(Map<String, dynamic> h) {
-    List<PhotoItem> photos = [];
+    // Junta TODAS as fontes (fotosJson, photos, fotos, urlFotos) e remove
+    // repetidas pelo id do arquivo no Drive, mantendo o comentario quando
+    // alguma das fontes o tiver. Antes, so a primeira fonte preenchida valia,
+    // e fotos que estavam apenas nas outras ficavam fora do PDF.
+    final merged = <String, PhotoItem>{};
+    final order = <String>[];
 
-    // 1. check h['fotosJson'] (from our new Apps Script update)
-    final fotosJson = h['fotosJson'];
-    if (fotosJson != null) {
-      if (fotosJson is List) {
-        _processPhotoList(fotosJson, photos);
-      } else if (fotosJson is String) {
-        _processPhotoJsonString(fotosJson, photos);
+    void collect(dynamic value, {required bool simple}) {
+      if (value == null) return;
+      final found = <PhotoItem>[];
+      if (value is List) {
+        _processPhotoList(value, found);
+      } else if (value is String) {
+        if (simple) {
+          _processPhotoSimpleString(value, found);
+        } else {
+          _processPhotoJsonString(value, found);
+        }
+      }
+      for (final p in found) {
+        final id = _extractDriveFileId(p.path);
+        final key = id ?? p.path.trim();
+        final existing = merged[key];
+        if (existing == null) {
+          merged[key] = p;
+          order.add(key);
+        } else if ((existing.comment == null || existing.comment!.isEmpty) &&
+            p.comment != null &&
+            p.comment!.isNotEmpty) {
+          merged[key] = PhotoItem(path: existing.path, comment: p.comment);
+        }
       }
     }
 
-    // 2. check h['photos']
-    final photosField = h['photos'];
-    if (photosField != null && photos.isEmpty) {
-      if (photosField is List) {
-        _processPhotoList(photosField, photos);
-      } else if (photosField is String) {
-        _processPhotoJsonString(photosField, photos);
-      }
-    }
+    collect(h['fotosJson'], simple: false);
+    collect(h['photos'], simple: false);
+    collect(h['fotos'], simple: false);
+    collect(h['urlFotos'] ?? h['url_fotos'] ?? h['Link Foto'] ?? h['Link Fotos'],
+        simple: true);
 
-    // 3. check h['fotos']
-    final fotosField = h['fotos'];
-    if (fotosField != null && photos.isEmpty) {
-      if (fotosField is List) {
-        _processPhotoList(fotosField, photos);
-      } else if (fotosField is String) {
-        _processPhotoJsonString(fotosField, photos);
-      }
-    }
-
-    // 4. check h['urlFotos']
-    final urlFotosField = h['urlFotos'];
-    if (urlFotosField != null && photos.isEmpty) {
-      if (urlFotosField is List) {
-        _processPhotoList(urlFotosField, photos);
-      } else if (urlFotosField is String) {
-        _processPhotoSimpleString(urlFotosField, photos);
-      }
-    }
-
-    return photos;
+    return [for (final k in order) merged[k]!];
   }
 
   ReportModel _histToReport(
